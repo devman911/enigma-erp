@@ -1,6 +1,9 @@
 
+
+
+
 import React, { useReducer, useState } from 'react';
-import { AppState, TabData, EntityType, Product, Document, DocType, Status, ProductFamily, ProductCategory, ProductSubCategory, TaxRate, CompanySettings as CompanySettingsType, Partner, User, Payment, PaymentStatus, CashSession, PaymentMethod } from './types';
+import { AppState, TabData, EntityType, Product, Document, DocType, Status, ProductFamily, ProductCategory, ProductSubCategory, TaxRate, CompanySettings as CompanySettingsType, Partner, User, Payment, PaymentStatus, CashSession, PaymentMethod, Expense } from './types';
 import { INITIAL_STATE } from './services/mockData';
 import { Dashboard } from './components/Modules/Dashboard';
 import { Inventory } from './components/Modules/Inventory';
@@ -17,8 +20,9 @@ import { UserEditor } from './components/Modules/UserEditor';
 import { PaymentList } from './components/Modules/PaymentList';
 import { CheckList } from './components/Modules/CheckList';
 import { CashRegister } from './components/Modules/CashRegister';
+import { ExpenseList } from './components/Modules/ExpenseList';
 import { DataTable } from './components/UI/DataTable';
-import { Layout, LayoutGrid, ShoppingCart, Truck, Users, Settings, X, FileText, Package, FolderTree, Building2, Percent, ClipboardList, ShoppingBag, Receipt, User as UserIcon, Shield, Wallet, ArrowUpRight, ArrowDownLeft, Banknote, DollarSign, Undo2 } from 'lucide-react';
+import { Layout, LayoutGrid, ShoppingCart, Truck, Users, Settings, X, FileText, Package, FolderTree, Building2, Percent, ClipboardList, ShoppingBag, Receipt, User as UserIcon, Shield, Wallet, ArrowUpRight, ArrowDownLeft, Banknote, DollarSign, Undo2, FileBarChart, TrendingDown } from 'lucide-react';
 
 // --- Reducer for "Backend" logic ---
 type Action = 
@@ -40,6 +44,8 @@ type Action =
   | { type: 'ADD_PAYMENT', payload: Payment }
   | { type: 'DELETE_PAYMENT', payload: string }
   | { type: 'UPDATE_PAYMENT_STATUS', payload: { id: string, status: PaymentStatus } }
+  | { type: 'ADD_EXPENSE', payload: Expense }
+  | { type: 'DELETE_EXPENSE', payload: string }
   | { type: 'OPEN_CASH_SESSION', payload: { openingBalance: number } }
   | { type: 'CLOSE_CASH_SESSION', payload: { id: string, actualBalance: number } };
 
@@ -131,23 +137,25 @@ function appReducer(state: AppState, action: Action): AppState {
 
     case 'ADD_PAYMENT':
         // Update Session Totals if there is an active session and payment is CASH
-        const activeSession = state.cashSessions.find(s => s.status === 'OPEN');
-        let newSessions = state.cashSessions;
-        
-        if (activeSession && action.payload.method === PaymentMethod.CASH) {
-           const isClient = state.partners.find(p => p.id === action.payload.partnerId)?.type === EntityType.CLIENT;
-           const updatedSession = { ...activeSession };
-           if (isClient) updatedSession.totalIn += action.payload.amount;
-           else updatedSession.totalOut += action.payload.amount;
-           
-           newSessions = state.cashSessions.map(s => s.id === activeSession.id ? updatedSession : s);
-        }
+        {
+          const activeSession = state.cashSessions.find(s => s.status === 'OPEN');
+          let newSessions = state.cashSessions;
+          
+          if (activeSession && action.payload.method === PaymentMethod.CASH) {
+            const isClient = state.partners.find(p => p.id === action.payload.partnerId)?.type === EntityType.CLIENT;
+            const updatedSession = { ...activeSession };
+            if (isClient) updatedSession.totalIn += action.payload.amount;
+            else updatedSession.totalOut += action.payload.amount;
+            
+            newSessions = state.cashSessions.map(s => s.id === activeSession.id ? updatedSession : s);
+          }
 
-        return { 
-            ...state, 
-            payments: [...state.payments, action.payload],
-            cashSessions: newSessions
-        };
+          return { 
+              ...state, 
+              payments: [...state.payments, action.payload],
+              cashSessions: newSessions
+          };
+        }
 
     case 'DELETE_PAYMENT':
         return { ...state, payments: state.payments.filter(p => p.id !== action.payload) };
@@ -155,6 +163,25 @@ function appReducer(state: AppState, action: Action): AppState {
     case 'UPDATE_PAYMENT_STATUS':
         return { ...state, payments: state.payments.map(p => p.id === action.payload.id ? { ...p, status: action.payload.status } : p) };
     
+    case 'ADD_EXPENSE':
+      // Update Session Totals if Cash
+      {
+        const activeSession = state.cashSessions.find(s => s.status === 'OPEN');
+        let newSessions = state.cashSessions;
+        if (activeSession && action.payload.method === PaymentMethod.CASH) {
+           const updatedSession = { ...activeSession, totalOut: activeSession.totalOut + action.payload.amount };
+           newSessions = state.cashSessions.map(s => s.id === activeSession.id ? updatedSession : s);
+        }
+        return {
+          ...state,
+          expenses: [...state.expenses, action.payload],
+          cashSessions: newSessions
+        };
+      }
+
+    case 'DELETE_EXPENSE':
+      return { ...state, expenses: state.expenses.filter(e => e.id !== action.payload) };
+
     case 'OPEN_CASH_SESSION':
         const newSession: CashSession = {
             id: `session_${Date.now()}`,
@@ -221,6 +248,11 @@ export default function App() {
   const openSupplierPayments = () => dispatch({ type: 'ADD_TAB', payload: { id: 'payments_suppliers', title: 'Règlements Fourn.', type: 'LIST', module: 'FINANCE' }});
   const openChecks = () => dispatch({ type: 'ADD_TAB', payload: { id: 'checks_mgmt', title: 'Gestion des Chèques', type: 'LIST', module: 'CHECKS' }});
   const openCashRegister = () => dispatch({ type: 'ADD_TAB', payload: { id: 'cash_register', title: 'Caisse & Clôture', type: 'LIST', module: 'CASH' }});
+  const openExpenses = () => dispatch({ type: 'ADD_TAB', payload: { id: 'expenses_list', title: 'Dépenses', type: 'LIST', module: 'EXPENSES' }});
+  
+  // New Separate Statements Actions
+  const openClientStatements = () => dispatch({ type: 'ADD_TAB', payload: { id: 'statements_clients', title: 'Relevés Clients', type: 'LIST', module: 'PARTNERS' }});
+  const openSupplierStatements = () => dispatch({ type: 'ADD_TAB', payload: { id: 'statements_suppliers', title: 'Relevés Fourn.', type: 'LIST', module: 'PARTNERS' }});
 
   // Creation Actions
   const createInvoice = () => {
@@ -287,8 +319,18 @@ export default function App() {
     dispatch({ type: 'ADD_TAB', payload: { id: product.id, title: product.name, type: 'FORM', module: 'INVENTORY', entityId: product.id }});
   };
 
-  const handleEditPartner = (partner: Partner) => {
-    dispatch({ type: 'ADD_TAB', payload: { id: partner.id, title: partner.name, type: 'FORM', module: 'PARTNERS', entityId: partner.id }});
+  // Updated to accept period
+  const handleEditPartner = (partner: Partner, initialTab?: string, dates?: { startDate: string, endDate: string }) => {
+    dispatch({ type: 'ADD_TAB', payload: { 
+        id: partner.id, 
+        title: partner.name, 
+        type: 'FORM', 
+        module: 'PARTNERS', 
+        entityId: partner.id, 
+        initialTab,
+        startDate: dates?.startDate,
+        endDate: dates?.endDate
+    }});
   };
 
   const handleEditUser = (user: User) => {
@@ -400,6 +442,17 @@ export default function App() {
     dispatch({ type: 'UPDATE_PAYMENT_STATUS', payload: { id, status } });
   }
 
+  const handleAddExpense = (expense: Expense) => {
+    dispatch({ type: 'ADD_EXPENSE', payload: expense });
+    alert('Dépense enregistrée.');
+  }
+
+  const handleDeleteExpense = (id: string) => {
+    if (confirm("Supprimer cette dépense ?")) {
+      dispatch({ type: 'DELETE_EXPENSE', payload: id });
+    }
+  }
+
   // Cash Register Handlers
   const handleOpenSession = (openingBalance: number) => {
       dispatch({ type: 'OPEN_CASH_SESSION', payload: { openingBalance } });
@@ -441,6 +494,8 @@ export default function App() {
     if (activeTab.type === 'LIST' && activeTab.module === 'PARTNERS' && activeTab.id === 'clients_list') {
         return <PartnerList 
           partners={state.partners}
+          documents={state.documents} 
+          payments={state.payments}
           type={EntityType.CLIENT}
           onCreate={createClient}
           onEdit={handleEditPartner}
@@ -453,9 +508,41 @@ export default function App() {
     if (activeTab.type === 'LIST' && activeTab.module === 'PARTNERS' && activeTab.id === 'suppliers_list') {
         return <PartnerList 
           partners={state.partners}
+          documents={state.documents}
+          payments={state.payments}
           type={EntityType.SUPPLIER}
           onCreate={createSupplier}
           onEdit={handleEditPartner}
+          onDelete={handleDeletePartner}
+          currency={currentCurrency}
+        />;
+    }
+
+    // Module Partners - List (Client Statements)
+    if (activeTab.type === 'LIST' && activeTab.module === 'PARTNERS' && activeTab.id === 'statements_clients') {
+        return <PartnerList 
+          partners={state.partners}
+          documents={state.documents}
+          payments={state.payments}
+          type={EntityType.CLIENT}
+          showPeriodFilter={true} // Enable date filter
+          onCreate={() => {}} // Disabled create in statement view
+          onEdit={(partner, dates) => handleEditPartner(partner, 'STATEMENT', dates)} // Open directly on statement tab with dates
+          onDelete={handleDeletePartner}
+          currency={currentCurrency}
+        />;
+    }
+
+    // Module Partners - List (Supplier Statements)
+    if (activeTab.type === 'LIST' && activeTab.module === 'PARTNERS' && activeTab.id === 'statements_suppliers') {
+        return <PartnerList 
+          partners={state.partners}
+          documents={state.documents}
+          payments={state.payments}
+          type={EntityType.SUPPLIER}
+          showPeriodFilter={true} // Enable date filter
+          onCreate={() => {}} // Disabled create in statement view
+          onEdit={(partner, dates) => handleEditPartner(partner, 'STATEMENT', dates)} // Open directly on statement tab with dates
           onDelete={handleDeletePartner}
           currency={currentCurrency}
         />;
@@ -470,11 +557,14 @@ export default function App() {
         return <PartnerEditor 
           initialData={partnerData}
           defaultType={partnerData?.type || defaultType}
-          documents={state.documents} // Pass documents for history
-          payments={state.payments} // Pass payments
+          initialTab={activeTab.initialTab} // Pass the specific tab to open
+          startDate={activeTab.startDate}   // Pass date filters
+          endDate={activeTab.endDate}       // Pass date filters
+          documents={state.documents} 
+          payments={state.payments} 
           onSave={handleSavePartner}
-          onAddPayment={handleAddPayment} // Pass handler
-          onDeletePayment={handleDeletePayment} // Pass delete handler
+          onAddPayment={handleAddPayment} 
+          onDeletePayment={handleDeletePayment} 
           onCancel={() => dispatch({ type: 'CLOSE_TAB', payload: activeTab.id })}
           onDelete={handleDeletePartner}
           currency={currentCurrency}
@@ -520,7 +610,8 @@ export default function App() {
 
     // Module Finance - Payment List
     if (activeTab.type === 'LIST' && activeTab.module === 'FINANCE') {
-        const type = activeTab.id === 'payments_clients' ? EntityType.CLIENT : EntityType.SUPPLIER;
+        const type = activeTab.id === 'payments_clients' ? EntityType.CLIENT : 
+                     activeTab.id === 'payments_suppliers' ? EntityType.SUPPLIER : undefined;
         return <PaymentList 
             payments={state.payments} 
             partners={state.partners}
@@ -539,6 +630,16 @@ export default function App() {
             currency={currentCurrency}
             onUpdateStatus={handleUpdatePaymentStatus}
         />;
+    }
+
+    // Module Expenses - List
+    if (activeTab.type === 'LIST' && activeTab.module === 'EXPENSES') {
+        return <ExpenseList 
+          expenses={state.expenses}
+          currency={currentCurrency}
+          onAdd={handleAddExpense}
+          onDelete={handleDeleteExpense}
+        />
     }
 
     // Module Cash Register
@@ -736,7 +837,10 @@ export default function App() {
           <SidebarItem icon={<ArrowDownLeft />} label="Règlements Clients" onClick={openClientPayments} active={state.activeTabId === 'payments_clients'} />
           <SidebarItem icon={<ArrowUpRight />} label="Règlements Fourn." onClick={openSupplierPayments} active={state.activeTabId === 'payments_suppliers'} />
           <SidebarItem icon={<Banknote />} label="Gestion des Chèques" onClick={openChecks} active={state.activeTabId === 'checks_mgmt'} />
+          <SidebarItem icon={<TrendingDown />} label="Dépenses & Frais" onClick={openExpenses} active={state.activeTabId === 'expenses_list'} />
           <SidebarItem icon={<DollarSign />} label="Caisse & Clôture" onClick={openCashRegister} active={state.activeTabId === 'cash_register'} />
+          <SidebarItem icon={<FileBarChart />} label="Relevés Clients" onClick={openClientStatements} active={state.activeTabId === 'statements_clients'} />
+          <SidebarItem icon={<FileBarChart />} label="Relevés Fourn." onClick={openSupplierStatements} active={state.activeTabId === 'statements_suppliers'} />
 
           <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Relations</div>
           <SidebarItem icon={<Users />} label="Clients" onClick={openClients} active={state.activeTabId === 'clients_list'} />

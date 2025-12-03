@@ -1,10 +1,12 @@
 
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Document, Product, Partner, LineItem, Status, DocType, CompanySettings, EntityType, Payment } from '../../types';
-import { Plus, Trash, Save, Printer, ScanBarcode, Search, CheckCircle, AlertOctagon, XCircle, FileInput, ArrowRight, Wallet, AlertTriangle, Undo2 } from 'lucide-react';
+import { Plus, Trash, Save, Printer, ScanBarcode, Search, CheckCircle, AlertOctagon, XCircle, FileInput, ArrowRight, Wallet, AlertTriangle, Undo2, List } from 'lucide-react';
 import { PrintTemplate } from '../UI/PrintTemplate';
 import { DocumentPaymentModal } from './DocumentPaymentModal';
+import { ProductSelectionModal } from './ProductSelectionModal';
 
 interface DocumentEditorProps {
   initialData?: Partial<Document>;
@@ -57,7 +59,8 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
   const [editTtcState, setEditTtcState] = useState<{ index: number, value: string } | null>(null);
   const [barcodeInput, setBarcodeInput] = useState('');
   const barcodeInputRef = useRef<HTMLInputElement>(null);
-  const [showPaymentModal, setShowPaymentModal] = useState(false); // Modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false); // Payment Modal state
+  const [showProductModal, setShowProductModal] = useState(false); // Product Catalog Modal state
 
   const symbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : 'TND';
 
@@ -74,14 +77,15 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInteractive = ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName);
-      if (e.key === 'Enter' && !isInteractive && !showPaymentModal) { // Disable global listener if modal open
+      // Disable global listener if any modal is open
+      if (e.key === 'Enter' && !isInteractive && !showPaymentModal && !showProductModal) { 
         e.preventDefault();
         barcodeInputRef.current?.focus();
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [showPaymentModal]);
+  }, [showPaymentModal, showProductModal]);
 
   const isPurchase = docType === DocType.PURCHASE || docType === DocType.ORDER || docType === DocType.PURCHASE_CREDIT_NOTE;
   
@@ -118,6 +122,27 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
       totalTTC: 0
     };
     setDoc(prev => ({ ...prev, items: [...(prev.items || []), newItem] }));
+  };
+
+  const handleBulkAddProducts = (selectedItems: { product: Product; quantity: number }[]) => {
+    const newItems = selectedItems.map(({ product, quantity }) => {
+      const newItem: LineItem = {
+        id: Math.random().toString(),
+        productId: product.id,
+        productName: product.name,
+        quantity: quantity,
+        unitPrice: isPurchase ? product.cost : product.price,
+        taxRate: product.taxRate || 20,
+        discount: 0,
+        totalHT: 0,
+        totalTTC: 0
+      };
+      return calculateLineItem(newItem);
+    });
+
+    const combinedItems = [...(doc.items || []), ...newItems];
+    const totals = calculateDocTotals(combinedItems);
+    setDoc(prev => ({ ...prev, items: combinedItems, ...totals }));
   };
 
   const addProductByBarcode = (sku: string) => {
@@ -259,6 +284,17 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
           />
       )}
 
+      {/* Product Catalog Modal */}
+      {showProductModal && (
+        <ProductSelectionModal 
+          products={products}
+          currencySymbol={symbol}
+          isPurchase={isPurchase}
+          onSelect={handleBulkAddProducts}
+          onClose={() => setShowProductModal(false)}
+        />
+      )}
+
       {/* Print Template */}
       <PrintTemplate document={doc} company={company} partner={selectedPartner} />
 
@@ -390,21 +426,31 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
           </div>
         </div>
 
-        {/* Barcode Scanner */}
-        <div className="mb-4 flex items-center gap-4 bg-indigo-50 p-3 rounded border border-indigo-100">
-          <div className="flex items-center gap-2 flex-1">
-             <ScanBarcode className="w-5 h-5 text-indigo-600" />
-             <input 
-               ref={barcodeInputRef}
-               type="text" 
-               className="flex-1 bg-white border border-indigo-200 rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-black"
-               placeholder="Scanner code-barres (SKU) et appuyez sur Entrée..."
-               value={barcodeInput}
-               onChange={(e) => setBarcodeInput(e.target.value)}
-               onKeyDown={handleBarcodeKeyDown}
-               autoFocus
-             />
-          </div>
+        {/* Scanner & Toolbar */}
+        <div className="mb-4 flex items-center gap-4">
+            <div className="flex items-center gap-4 bg-indigo-50 p-3 rounded border border-indigo-100 flex-1">
+              <div className="flex items-center gap-2 flex-1">
+                <ScanBarcode className="w-5 h-5 text-indigo-600" />
+                <input 
+                  ref={barcodeInputRef}
+                  type="text" 
+                  className="flex-1 bg-white border border-indigo-200 rounded p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-black"
+                  placeholder="Scanner code-barres (SKU) et appuyez sur Entrée..."
+                  value={barcodeInput}
+                  onChange={(e) => setBarcodeInput(e.target.value)}
+                  onKeyDown={handleBarcodeKeyDown}
+                  autoFocus
+                />
+              </div>
+            </div>
+            
+            {/* Catalog Button */}
+            <button 
+                onClick={() => setShowProductModal(true)}
+                className="bg-slate-800 text-white px-4 py-3 rounded hover:bg-slate-700 flex items-center gap-2 shadow-sm whitespace-nowrap"
+            >
+                <List className="w-4 h-4" /> Catalogue
+            </button>
         </div>
 
         {/* Line Items */}

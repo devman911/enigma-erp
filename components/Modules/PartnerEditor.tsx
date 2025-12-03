@@ -1,5 +1,6 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Partner, EntityType, Document, DocType, Status, Payment } from '../../types';
 import { Save, X, User, MapPin, Phone, Mail, FileText, Wallet, TrendingUp, AlertCircle, PlusCircle, History, Trash, Printer, Calendar, Filter } from 'lucide-react';
 import { DataTable } from '../UI/DataTable';
@@ -8,6 +9,9 @@ import { PaymentModal } from './PaymentModal';
 interface PartnerEditorProps {
   initialData?: Partner;
   defaultType: EntityType;
+  initialTab?: string; // 'DETAILS' | 'HISTORY' | 'STATEMENT'
+  startDate?: string; // Filter passed from parent
+  endDate?: string;   // Filter passed from parent
   documents: Document[]; // Added to show history
   payments: Payment[]; // Added for payments
   onSave: (partner: Partner) => void;
@@ -18,13 +22,19 @@ interface PartnerEditorProps {
   currency: string;
 }
 
-export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defaultType, documents, payments, onSave, onAddPayment, onCancel, onDelete, onDeletePayment, currency }) => {
+export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defaultType, initialTab, startDate: initialStartDate, endDate: initialEndDate, documents, payments, onSave, onAddPayment, onCancel, onDelete, onDeletePayment, currency }) => {
   const [activeTab, setActiveTab] = useState<'DETAILS' | 'HISTORY' | 'STATEMENT'>('DETAILS');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   
-  // Date filters for Statement
-  const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  useEffect(() => {
+    if (initialTab && (initialTab === 'DETAILS' || initialTab === 'HISTORY' || initialTab === 'STATEMENT')) {
+        setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+  
+  // Date filters for Statement - Initialize with props if available
+  const [startDate, setStartDate] = useState(initialStartDate || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(initialEndDate || new Date().toISOString().split('T')[0]);
 
   const [formData, setFormData] = useState<Partner>(initialData || {
     id: Math.random().toString(36).substr(2, 9),

@@ -93,7 +93,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
       </div>
 
       {/* Table */}
-      <DataTable 
+      <DataTable<Document>
         title={title}
         data={filteredDocs} 
         columns={[

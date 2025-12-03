@@ -78,6 +78,16 @@ export interface Payment {
   status?: PaymentStatus; // Statut du règlement (En attente, Encaissé...)
 }
 
+export interface Expense {
+  id: string;
+  date: string;
+  category: string; // Loyer, Salaires, Transport, etc.
+  description: string;
+  amount: number;
+  method: PaymentMethod;
+  reference?: string;
+}
+
 export interface CashSession {
   id: string;
   openedAt: string; // ISO String datetime
@@ -176,8 +186,11 @@ export interface TabData {
   id: string;
   title: string;
   type: 'DASHBOARD' | 'LIST' | 'FORM' | 'CONFIG';
-  module: 'SALES' | 'PURCHASES' | 'INVENTORY' | 'PARTNERS' | 'SETTINGS' | 'COMPANY' | 'USERS' | 'FINANCE' | 'CHECKS' | 'CASH';
+  module: 'SALES' | 'PURCHASES' | 'INVENTORY' | 'PARTNERS' | 'SETTINGS' | 'COMPANY' | 'USERS' | 'FINANCE' | 'CHECKS' | 'CASH' | 'EXPENSES';
   entityId?: string; // For editing
+  initialTab?: string; // Optional: specific tab to open within a module (e.g. 'STATEMENT')
+  startDate?: string; // Optional: start date filter passed to form
+  endDate?: string; // Optional: end date filter passed to form
 }
 
 export interface AppState {
@@ -186,6 +199,7 @@ export interface AppState {
   products: Product[];
   documents: Document[];
   payments: Payment[];
+  expenses: Expense[];
   cashSessions: CashSession[]; // Historique de caisse
   families: ProductFamily[];
   categories: ProductCategory[];

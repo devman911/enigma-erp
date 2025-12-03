@@ -1,6 +1,7 @@
 
 
-import { AppState, DocType, EntityType, Status, Role } from '../types';
+
+import { AppState, DocType, EntityType, Status, Role, PaymentMethod } from '../types';
 
 export const INITIAL_STATE: AppState = {
   activeTabId: 'dashboard',
@@ -119,5 +120,9 @@ export const INITIAL_STATE: AppState = {
     }
   ],
   payments: [],
+  expenses: [
+      { id: 'exp1', date: '2023-10-01', category: 'Loyer', description: 'Loyer Bureau Octobre', amount: 800, method: PaymentMethod.TRANSFER, reference: 'VIR-LOYER' },
+      { id: 'exp2', date: '2023-10-10', category: 'Electricité', description: 'Facture STEG', amount: 150, method: PaymentMethod.CASH, reference: '' },
+  ],
   cashSessions: []
 };
