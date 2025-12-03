@@ -1,0 +1,7 @@
+{
+  "name": "ENIGMA ERP - Gestion Commerciale",
+  "description": "Un ERP frontend complet basé sur React, conçu pour offrir des fonctionnalités similaires à Odoo. Comprend une interface par onglets dynamiques, la gestion des stocks, les flux de ventes/achats et des analyses commerciales alimentées par l'IA via Gemini.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
