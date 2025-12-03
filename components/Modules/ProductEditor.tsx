@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Product, ProductFamily, ProductCategory, ProductSubCategory, TaxRate } from '../../types';
-import { Save, X, Package, Barcode, AlertTriangle, Tag, DollarSign, Layers, Percent } from 'lucide-react';
+
+import React, { useState, useMemo } from 'react';
+import { Product, ProductFamily, ProductCategory, ProductSubCategory, TaxRate, Document, Status, DocType } from '../../types';
+import { Save, X, Package, Barcode, AlertTriangle, Tag, DollarSign, Layers, Percent, ArrowRight, ArrowLeft, History, Calendar } from 'lucide-react';
+import { DataTable } from '../UI/DataTable';
 
 interface ProductEditorProps {
   initialData?: Product;
@@ -11,6 +13,7 @@ interface ProductEditorProps {
   onSave: (product: Product) => void;
   onCancel: () => void;
   currency: string;
+  documents?: Document[]; // Optional for backward compatibility, but required for history
 }
 
 export const ProductEditor: React.FC<ProductEditorProps> = ({ 
@@ -21,8 +24,15 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   taxRates,
   onSave, 
   onCancel,
-  currency
+  currency,
+  documents = []
 }) => {
+  const [activeTab, setActiveTab] = useState<'INFO' | 'HISTORY'>('INFO');
+
+  // Date filters for History Tab
+  const [historyStartDate, setHistoryStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
+  const [historyEndDate, setHistoryEndDate] = useState(new Date().toISOString().split('T')[0]);
+
   const [formData, setFormData] = useState<Product>(initialData || {
     id: Math.random().toString(36).substr(2, 9),
     sku: '',
@@ -92,6 +102,55 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
 
   // --- End Pricing Logic ---
 
+  // --- History Calculation ---
+  const movementHistory = useMemo(() => {
+    if (!initialData) return [];
+
+    const history: any[] = [];
+    documents.forEach(doc => {
+        // Skip drafts/cancelled
+        if (doc.status === Status.DRAFT || doc.status === Status.CANCELLED) return;
+        
+        // Find if this product is in the document
+        const item = doc.items.find(i => i.productId === initialData.id);
+        if (!item) return;
+
+        let direction: 'IN' | 'OUT' | 'NONE' = 'NONE';
+        
+        // Logic same as StockJournal
+        if (doc.type === DocType.PURCHASE) direction = 'IN'; 
+        if (doc.type === DocType.CREDIT_NOTE) direction = 'IN'; 
+        if (doc.type === DocType.DELIVERY_NOTE) direction = 'OUT'; 
+        if (doc.type === DocType.PURCHASE_CREDIT_NOTE) direction = 'OUT'; 
+
+        if (direction === 'NONE') return;
+
+        history.push({
+            id: `${doc.id}_${item.id}`,
+            date: doc.date,
+            docRef: doc.reference,
+            docType: doc.type,
+            quantity: item.quantity,
+            direction: direction,
+            partner: doc.partnerName
+        });
+    });
+
+    return history.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [documents, initialData]);
+
+  // Filtered History based on Date Range
+  const filteredHistory = useMemo(() => {
+      const start = new Date(historyStartDate);
+      const end = new Date(historyEndDate);
+      end.setHours(23, 59, 59); // End of day
+
+      return movementHistory.filter(m => {
+          const d = new Date(m.date);
+          return d >= start && d <= end;
+      });
+  }, [movementHistory, historyStartDate, historyEndDate]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.sku) {
@@ -119,7 +178,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
   return (
     <div className="bg-white h-full flex flex-col p-6 overflow-auto animate-in fade-in duration-200">
       {/* En-tête */}
-      <div className="flex justify-between items-start mb-8 border-b border-slate-200 pb-4">
+      <div className="flex justify-between items-start mb-4 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <div className="p-2 bg-indigo-100 rounded-lg">
@@ -149,8 +208,87 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
         </div>
       </div>
 
-      {/* Formulaire Grid */}
-      <form className="max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
+      {/* TABS */}
+      {initialData && (
+          <div className="flex gap-6 border-b border-slate-200 mb-6">
+              <button 
+                onClick={() => setActiveTab('INFO')}
+                className={`pb-2 text-sm font-medium transition-colors ${activeTab === 'INFO' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Informations Produit
+              </button>
+              <button 
+                onClick={() => setActiveTab('HISTORY')}
+                className={`pb-2 text-sm font-medium transition-colors ${activeTab === 'HISTORY' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Historique Mouvements
+              </button>
+          </div>
+      )}
+
+      {activeTab === 'HISTORY' ? (
+          <div className="animate-in slide-in-from-bottom-2 duration-300">
+              
+              {/* Date Filter Toolbar */}
+              <div className="flex items-center gap-4 bg-slate-50 p-3 rounded border border-slate-200 mb-4">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-slate-500" />
+                    <span className="text-sm font-medium text-slate-700">Du :</span>
+                    <input 
+                        type="date" 
+                        className="border border-slate-300 rounded p-1.5 text-sm bg-white text-black focus:outline-none focus:border-indigo-500"
+                        value={historyStartDate}
+                        onChange={(e) => setHistoryStartDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-slate-700">Au :</span>
+                    <input 
+                        type="date" 
+                        className="border border-slate-300 rounded p-1.5 text-sm bg-white text-black focus:outline-none focus:border-indigo-500"
+                        value={historyEndDate}
+                        onChange={(e) => setHistoryEndDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="text-xs text-slate-500 ml-auto flex items-center gap-1">
+                      <span className="font-bold">{filteredHistory.length}</span> mouvements trouvés
+                  </div>
+              </div>
+
+              <DataTable
+                 title="Mouvements de Stock"
+                 data={filteredHistory}
+                 columns={[
+                     { key: 'date', header: 'Date' },
+                     { key: 'docRef', header: 'Document', render: (m: any) => (
+                        <div>
+                            <div className="font-bold text-slate-700">{m.docRef}</div>
+                            <div className="text-[10px] text-slate-500">{m.partner}</div>
+                        </div>
+                     )},
+                     { key: 'direction', header: 'Type', render: (m: any) => (
+                        <span className={`flex items-center gap-1 text-xs font-bold px-2 py-1 rounded uppercase w-fit ${m.direction === 'IN' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {m.direction === 'IN' ? <ArrowRight className="w-3 h-3"/> : <ArrowLeft className="w-3 h-3"/>}
+                            {m.direction === 'IN' ? 'Entrée' : 'Sortie'}
+                        </span>
+                     )},
+                     { key: 'quantity', header: 'Quantité', render: (m: any) => (
+                        <span className={`font-bold ${m.direction === 'IN' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                            {m.direction === 'IN' ? '+' : '-'}{m.quantity}
+                        </span>
+                     )}
+                 ]}
+              />
+              {filteredHistory.length === 0 && (
+                  <div className="text-center p-8 text-slate-400 bg-slate-50 rounded mt-4">
+                      <History className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      Aucun mouvement de stock sur cette période.
+                  </div>
+              )}
+          </div>
+      ) : (
+      /* Formulaire Grid */
+      <form className="max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8 animate-in slide-in-from-bottom-2 duration-300">
         
         {/* Colonne Gauche : Infos Générales & Classification */}
         <div className="space-y-6">
@@ -368,6 +506,7 @@ export const ProductEditor: React.FC<ProductEditorProps> = ({
 
         </div>
       </form>
+      )}
     </div>
   );
 };

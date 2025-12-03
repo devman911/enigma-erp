@@ -71,10 +71,11 @@ export const INITIAL_STATE: AppState = {
     },
   ],
   users: [
-    { id: 'u1', name: 'Administrateur', email: 'admin@nexus.com', role: Role.ADMIN, active: true },
-    { id: 'u2', name: 'Sarah Vente', email: 'sarah@nexus.com', role: Role.SALES, active: true },
-    { id: 'u3', name: 'Marc Stock', email: 'marc@nexus.com', role: Role.STOCK, active: true },
+    { id: 'u1', name: 'Administrateur', email: 'admin@enigma.com', role: Role.ADMIN, active: true },
+    { id: 'u2', name: 'Sarah Vente', email: 'sarah@enigma.com', role: Role.SALES, active: true },
+    { id: 'u3', name: 'Marc Stock', email: 'marc@enigma.com', role: Role.STOCK, active: true },
   ],
+  currentUser: null, // Ensure Login Screen shows up
   documents: [
     {
       id: 'doc1', reference: 'FAC-2023-001', type: DocType.INVOICE, partnerId: 'p1', partnerName: 'Acme Corp', date: '2023-10-15', status: Status.UNPAID,
@@ -122,5 +123,6 @@ export const INITIAL_STATE: AppState = {
       { id: 'exp1', date: '2023-10-01', category: 'Loyer', description: 'Loyer Bureau Octobre', amount: 800, method: PaymentMethod.TRANSFER, reference: 'VIR-LOYER' },
       { id: 'exp2', date: '2023-10-10', category: 'Electricité', description: 'Facture STEG', amount: 150, method: PaymentMethod.CASH, reference: '' },
   ],
-  cashSessions: []
+  cashSessions: [],
+  inventorySessions: []
 };

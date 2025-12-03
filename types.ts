@@ -172,6 +172,24 @@ export interface Document {
   totalTTC: number;
 }
 
+export interface InventoryItem {
+  productId: string;
+  productName: string;
+  sku: string;
+  expectedStock: number; // Stock Théorique (Snapshot)
+  countedStock: number; // Stock Réel (Saisi)
+  difference: number;
+}
+
+export interface InventorySession {
+  id: string;
+  date: string;
+  reference: string;
+  status: Status; // DRAFT or VALIDATED
+  note?: string;
+  items: InventoryItem[];
+}
+
 export interface CompanySettings {
   name: string;
   address: string;
@@ -191,7 +209,7 @@ export interface TabData {
   id: string;
   title: string;
   type: 'DASHBOARD' | 'LIST' | 'FORM' | 'CONFIG';
-  module: 'SALES' | 'PURCHASES' | 'INVENTORY' | 'PARTNERS' | 'SETTINGS' | 'COMPANY' | 'USERS' | 'FINANCE' | 'CHECKS' | 'CASH' | 'EXPENSES';
+  module: 'SALES' | 'PURCHASES' | 'INVENTORY' | 'PARTNERS' | 'SETTINGS' | 'COMPANY' | 'USERS' | 'FINANCE' | 'CHECKS' | 'CASH' | 'EXPENSES' | 'STOCK_JOURNAL' | 'STOCK_COUNT';
   entityId?: string; // For editing
   initialTab?: string; // Optional: specific tab to open within a module (e.g. 'STATEMENT')
   startDate?: string; // Optional: start date filter passed to form
@@ -206,11 +224,13 @@ export interface AppState {
   payments: Payment[];
   expenses: Expense[];
   cashSessions: CashSession[]; // Historique de caisse
+  inventorySessions: InventorySession[]; // Historique des inventaires
   families: ProductFamily[];
   categories: ProductCategory[];
   subCategories: ProductSubCategory[];
   taxRates: TaxRate[];
   users: User[];
+  currentUser?: User;
   tabs: TabData[];
   activeTabId: string;
 }

@@ -1,6 +1,6 @@
 
 import React, { useReducer, useState } from 'react';
-import { AppState, TabData, EntityType, Product, Document, DocType, Status, ProductFamily, ProductCategory, ProductSubCategory, TaxRate, CompanySettings as CompanySettingsType, Partner, User, Payment, PaymentStatus, CashSession, PaymentMethod, Expense, PaymentNature } from './types';
+import { AppState, TabData, EntityType, Product, Document, DocType, Status, ProductFamily, ProductCategory, ProductSubCategory, TaxRate, CompanySettings as CompanySettingsType, Partner, User, Payment, PaymentStatus, CashSession, PaymentMethod, Expense, PaymentNature, Role, InventorySession } from './types';
 import { INITIAL_STATE } from './services/mockData';
 import { Dashboard } from './components/Modules/Dashboard';
 import { Inventory } from './components/Modules/Inventory';
@@ -18,11 +18,16 @@ import { PaymentList } from './components/Modules/PaymentList';
 import { CheckList } from './components/Modules/CheckList';
 import { CashRegister } from './components/Modules/CashRegister';
 import { ExpenseList } from './components/Modules/ExpenseList';
-import { DataTable } from './components/UI/DataTable';
-import { Layout, LayoutGrid, ShoppingCart, Truck, Users, Settings, X, FileText, Package, FolderTree, Building2, Percent, ClipboardList, ShoppingBag, Receipt, User as UserIcon, Shield, Wallet, ArrowUpRight, ArrowDownLeft, Banknote, DollarSign, Undo2, FileBarChart, TrendingDown, RotateCcw } from 'lucide-react';
+import { LoginScreen } from './components/Modules/LoginScreen';
+import { StockJournal } from './components/Modules/StockJournal';
+import { InventorySessionList } from './components/Modules/InventorySessionList';
+import { InventorySessionEditor } from './components/Modules/InventorySessionEditor';
+import { Layout, LayoutGrid, ShoppingCart, Truck, Users, Settings, X, FileText, Package, FolderTree, Building2, Percent, ClipboardList, ShoppingBag, Receipt, User as UserIcon, Shield, Wallet, ArrowUpRight, ArrowDownLeft, Banknote, DollarSign, Undo2, FileBarChart, TrendingDown, RotateCcw, LogOut, Menu, ClipboardCheck } from 'lucide-react';
 
 // --- Reducer for "Backend" logic ---
 type Action = 
+  | { type: 'LOGIN', payload: User }
+  | { type: 'LOGOUT' }
   | { type: 'ADD_TAB', payload: TabData }
   | { type: 'CLOSE_TAB', payload: string }
   | { type: 'SET_ACTIVE_TAB', payload: string }
@@ -47,10 +52,16 @@ type Action =
   | { type: 'ADD_EXPENSE', payload: Expense }
   | { type: 'DELETE_EXPENSE', payload: string }
   | { type: 'OPEN_CASH_SESSION', payload: { openingBalance: number } }
-  | { type: 'CLOSE_CASH_SESSION', payload: { id: string, actualBalance: number } };
+  | { type: 'CLOSE_CASH_SESSION', payload: { id: string, actualBalance: number } }
+  | { type: 'SAVE_INVENTORY_SESSION', payload: InventorySession };
 
 function appReducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'LOGIN':
+      return { ...state, currentUser: action.payload };
+    case 'LOGOUT':
+      return { ...state, currentUser: undefined, tabs: [], activeTabId: '' };
+
     case 'ADD_TAB':
       const existing = state.tabs.find(t => t.id === action.payload.id);
       if (existing) return { ...state, activeTabId: existing.id };
@@ -232,6 +243,30 @@ function appReducer(state: AppState, action: Action): AppState {
         };
         return { ...state, cashSessions: state.cashSessions.map(s => s.id === action.payload.id ? closedSession : s) };
 
+    case 'SAVE_INVENTORY_SESSION':
+        const sessionIndex = state.inventorySessions.findIndex(s => s.id === action.payload.id);
+        let newSessionsList;
+        if (sessionIndex >= 0) {
+            newSessionsList = [...state.inventorySessions];
+            newSessionsList[sessionIndex] = action.payload;
+        } else {
+            newSessionsList = [...state.inventorySessions, action.payload];
+        }
+        
+        // If Validated, update product stocks
+        let updatedProducts = state.products;
+        if (action.payload.status === Status.VALIDATED) {
+            updatedProducts = state.products.map(p => {
+                const item = action.payload.items.find(i => i.productId === p.id);
+                if (item) {
+                    return { ...p, stock: item.countedStock };
+                }
+                return p;
+            });
+        }
+
+        return { ...state, inventorySessions: newSessionsList, products: updatedProducts };
+
     default:
       return state;
   }
@@ -240,12 +275,42 @@ function appReducer(state: AppState, action: Action): AppState {
 export default function App() {
   const [state, dispatch] = useReducer(appReducer, INITIAL_STATE);
   const currentCurrency = state.company.currency;
-  const currencySymbol = currentCurrency === 'EUR' ? '€' : currentCurrency === 'USD' ? '$' : 'TND';
+  
+  // -- LOGIN CHECK --
+  if (!state.currentUser) {
+      return (
+          <LoginScreen 
+            users={state.users} 
+            company={state.company}
+            onLogin={(user) => dispatch({ type: 'LOGIN', payload: user })} 
+          />
+      );
+  }
+
+  // --- PERMISSION HELPER ---
+  const canAccess = (module: string) => {
+      const role = state.currentUser?.role;
+      if (role === Role.ADMIN) return true;
+
+      switch(module) {
+          case 'SALES': return role === Role.SALES;
+          case 'PURCHASES': return role === Role.PURCHASES || role === Role.STOCK;
+          case 'INVENTORY': return role === Role.STOCK || role === Role.PURCHASES || role === Role.SALES;
+          case 'PARTNERS': return role === Role.SALES || role === Role.PURCHASES;
+          case 'FINANCE': return role === Role.SALES; // Basic access
+          case 'CONFIG': return false; // Admin only usually
+          default: return true;
+      }
+  };
 
   // --- Actions ---
+  const handleLogout = () => dispatch({ type: 'LOGOUT' });
+
   const openDashboard = () => dispatch({ type: 'ADD_TAB', payload: { id: 'dashboard', title: 'Tableau de bord', type: 'DASHBOARD', module: 'SALES' }});
   
   const openInventory = () => dispatch({ type: 'ADD_TAB', payload: { id: 'inventory', title: 'Gestion des Stocks', type: 'LIST', module: 'INVENTORY' }});
+  const openStockJournal = () => dispatch({ type: 'ADD_TAB', payload: { id: 'stock_journal', title: 'Journal des Stocks', type: 'LIST', module: 'STOCK_JOURNAL' }});
+  const openInventorySessions = () => dispatch({ type: 'ADD_TAB', payload: { id: 'inventory_sessions', title: 'Inventaires Physiques', type: 'LIST', module: 'STOCK_COUNT' }});
 
   const openCategories = () => dispatch({ type: 'ADD_TAB', payload: { id: 'categories', title: 'Familles & Catégories', type: 'CONFIG', module: 'INVENTORY' }});
   
@@ -271,8 +336,7 @@ export default function App() {
   const openClientPayments = () => dispatch({ type: 'ADD_TAB', payload: { id: 'payments_clients', title: 'Encaissements Clients', type: 'LIST', module: 'FINANCE' }});
   const openSupplierPayments = () => dispatch({ type: 'ADD_TAB', payload: { id: 'payments_suppliers', title: 'Décaissements Fourn.', type: 'LIST', module: 'FINANCE' }});
   const openClientRefunds = () => dispatch({ type: 'ADD_TAB', payload: { id: 'refunds_clients', title: 'Remboursements Clients', type: 'LIST', module: 'FINANCE' }});
-  // const openSupplierRefunds = () => dispatch({ type: 'ADD_TAB', payload: { id: 'refunds_suppliers', title: 'Remboursements Fourn.', type: 'LIST', module: 'FINANCE' }}); // REMOVED
-
+  
   const openChecks = () => dispatch({ type: 'ADD_TAB', payload: { id: 'checks_mgmt', title: 'Gestion des Chèques', type: 'LIST', module: 'CHECKS' }});
   const openCashRegister = () => dispatch({ type: 'ADD_TAB', payload: { id: 'cash_register', title: 'Caisse & Clôture', type: 'LIST', module: 'CASH' }});
   const openExpenses = () => dispatch({ type: 'ADD_TAB', payload: { id: 'expenses_list', title: 'Dépenses', type: 'LIST', module: 'EXPENSES' }});
@@ -317,6 +381,11 @@ export default function App() {
     dispatch({ type: 'ADD_TAB', payload: { id, title: 'Nouvel Avoir Fourn.', type: 'FORM', module: 'PURCHASES', entityId: id }});
   };
 
+  const createInventorySession = () => {
+    const id = `new_inv_sess_${Date.now()}`;
+    dispatch({ type: 'ADD_TAB', payload: { id, title: 'Nouvel Inventaire', type: 'FORM', module: 'STOCK_COUNT', entityId: id }});
+  };
+
   const createClient = () => {
     const id = `new_cli_${Date.now()}`;
     dispatch({ type: 'ADD_TAB', payload: { id, title: 'Nouveau Client', type: 'FORM', module: 'PARTNERS', entityId: id }});
@@ -344,6 +413,10 @@ export default function App() {
 
   const handleEditProduct = (product: Product) => {
     dispatch({ type: 'ADD_TAB', payload: { id: product.id, title: product.name, type: 'FORM', module: 'INVENTORY', entityId: product.id }});
+  };
+
+  const handleEditInventorySession = (session: InventorySession) => {
+    dispatch({ type: 'ADD_TAB', payload: { id: session.id, title: session.reference, type: 'FORM', module: 'STOCK_COUNT', entityId: session.id }});
   };
 
   // Updated to accept period
@@ -429,15 +502,17 @@ export default function App() {
   };
 
   const handleDeletePartner = (id: string) => {
-    dispatch({ type: 'DELETE_PARTNER', payload: id });
-    dispatch({ type: 'CLOSE_TAB', payload: id });
-    alert('Fiche supprimée.');
+    if (confirm("Êtes-vous sûr de vouloir supprimer cette fiche ?")) {
+        dispatch({ type: 'DELETE_PARTNER', payload: id });
+        dispatch({ type: 'CLOSE_TAB', payload: id });
+    }
   };
 
   const handleDeleteUser = (id: string) => {
-    dispatch({ type: 'DELETE_USER', payload: id });
-    dispatch({ type: 'CLOSE_TAB', payload: id });
-    alert('Utilisateur supprimé.');
+    if (confirm("Êtes-vous sûr de vouloir supprimer cet utilisateur ?")) {
+        dispatch({ type: 'DELETE_USER', payload: id });
+        dispatch({ type: 'CLOSE_TAB', payload: id });
+    }
   };
 
   const handleSaveCompany = (company: CompanySettingsType) => {
@@ -488,6 +563,22 @@ export default function App() {
       dispatch({ type: 'CLOSE_CASH_SESSION', payload: { id, actualBalance } });
   }
 
+  const handleDeleteTax = (id: string) => {
+      if (confirm("Supprimer ce taux de TVA ?")) {
+          dispatch({ type: 'DELETE_TAX_RATE', payload: id });
+      }
+  }
+
+  const handleSaveInventorySession = (session: InventorySession) => {
+      dispatch({ type: 'SAVE_INVENTORY_SESSION', payload: session });
+      dispatch({ type: 'CLOSE_TAB', payload: session.id });
+      if (session.status === Status.VALIDATED) {
+          alert("Inventaire validé et stock mis à jour.");
+      } else {
+          alert("Brouillon d'inventaire enregistré.");
+      }
+  }
+
   // --- Render Active Tab Content ---
   const renderContent = () => {
     const activeTab = state.tabs.find(t => t.id === state.activeTabId);
@@ -503,6 +594,35 @@ export default function App() {
         onEdit={handleEditProduct}
         currency={currentCurrency}
       />;
+    }
+
+    // Module Inventory - Stock Journal
+    if (activeTab.type === 'LIST' && activeTab.module === 'STOCK_JOURNAL') {
+        return <StockJournal 
+            products={state.products}
+            documents={state.documents}
+            currency={currentCurrency}
+        />;
+    }
+
+    // Module Inventory - Inventory Sessions List
+    if (activeTab.type === 'LIST' && activeTab.module === 'STOCK_COUNT') {
+        return <InventorySessionList 
+            sessions={state.inventorySessions}
+            onCreate={createInventorySession}
+            onEdit={handleEditInventorySession}
+        />;
+    }
+
+    // Module Inventory - Inventory Session Form
+    if (activeTab.type === 'FORM' && activeTab.module === 'STOCK_COUNT') {
+        const sessionData = state.inventorySessions.find(s => s.id === activeTab.entityId);
+        return <InventorySessionEditor 
+            initialData={sessionData}
+            products={state.products}
+            onSave={handleSaveInventorySession}
+            onCancel={() => dispatch({ type: 'CLOSE_TAB', payload: activeTab.id })}
+        />;
     }
 
     // Module Inventory - Categories
@@ -528,7 +648,7 @@ export default function App() {
           payments={state.payments}
           type={EntityType.CLIENT}
           onCreate={createClient}
-          onEdit={handleEditPartner}
+          onEdit={(p) => handleEditPartner(p)}
           onDelete={handleDeletePartner}
           currency={currentCurrency}
         />;
@@ -542,7 +662,7 @@ export default function App() {
           payments={state.payments}
           type={EntityType.SUPPLIER}
           onCreate={createSupplier}
-          onEdit={handleEditPartner}
+          onEdit={(p) => handleEditPartner(p)}
           onDelete={handleDeletePartner}
           currency={currentCurrency}
         />;
@@ -603,6 +723,7 @@ export default function App() {
 
     // Module Users - List
     if (activeTab.type === 'LIST' && activeTab.module === 'USERS') {
+        if (!canAccess('USERS')) return <div className="p-10 text-center text-red-500 font-bold">Accès refusé : Réservé aux administrateurs.</div>;
         return <UserList 
           users={state.users}
           onCreate={createUser}
@@ -612,6 +733,7 @@ export default function App() {
 
     // Module Users - Form (Editor)
     if (activeTab.type === 'FORM' && activeTab.module === 'USERS') {
+        if (!canAccess('USERS')) return <div className="p-10 text-center text-red-500 font-bold">Accès refusé.</div>;
         const userData = state.users.find(u => u.id === activeTab.entityId);
         return <UserEditor 
           initialData={userData}
@@ -623,15 +745,17 @@ export default function App() {
 
     // Module Settings - Tax Manager
     if (activeTab.type === 'CONFIG' && activeTab.module === 'SETTINGS') {
+        if (!canAccess('CONFIG')) return <div className="p-10 text-center text-red-500 font-bold">Accès refusé : Réservé aux administrateurs.</div>;
         return <TaxManager 
           taxRates={state.taxRates}
           onAdd={(name, rate) => dispatch({ type: 'ADD_TAX_RATE', payload: { name, rate } })}
-          onDelete={(id) => dispatch({ type: 'DELETE_TAX_RATE', payload: id })}
+          onDelete={handleDeleteTax}
         />;
     }
 
     // Module Settings - Company
     if (activeTab.type === 'CONFIG' && activeTab.module === 'COMPANY') {
+        if (!canAccess('CONFIG')) return <div className="p-10 text-center text-red-500 font-bold">Accès refusé : Réservé aux administrateurs.</div>;
         return <CompanySettings 
           data={state.company}
           onSave={handleSaveCompany}
@@ -646,7 +770,6 @@ export default function App() {
         if (activeTab.id === 'payments_clients') { type = EntityType.CLIENT; nature = PaymentNature.PAYMENT; }
         if (activeTab.id === 'payments_suppliers') { type = EntityType.SUPPLIER; nature = PaymentNature.PAYMENT; }
         if (activeTab.id === 'refunds_clients') { type = EntityType.CLIENT; nature = PaymentNature.REFUND; }
-        // REMOVED supplier refunds logic
 
         return <PaymentList 
             payments={state.payments} 
@@ -705,6 +828,7 @@ export default function App() {
           onSave={handleSaveProduct}
           onCancel={() => dispatch({ type: 'CLOSE_TAB', payload: activeTab.id })}
           currency={currentCurrency}
+          documents={state.documents}
         />
       );
     }
@@ -843,89 +967,152 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-100 font-sans text-slate-900">
+    <div className="flex flex-col h-screen bg-slate-100 font-sans text-slate-900">
       
-      {/* Sidebar - Odoo style */}
-      <aside className="w-16 md:w-64 bg-slate-900 text-slate-300 flex flex-col transition-all flex-shrink-0 print:hidden">
-        <div className="h-14 flex items-center justify-center md:justify-start md:px-6 border-b border-slate-700">
-          <LayoutGrid className="text-indigo-400 w-6 h-6 mr-0 md:mr-3" />
-          <span className="font-bold text-white text-lg hidden md:block">Nexus ERP</span>
-        </div>
-        
-        <nav className="flex-1 py-4 overflow-y-auto">
-          <SidebarItem icon={<Layout />} label="Tableau de bord" onClick={openDashboard} active={state.activeTabId === 'dashboard'} />
-          
-          <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Commercial</div>
-          <SidebarItem icon={<FileText />} label="Facture Client" onClick={openInvoices} active={state.activeTabId === 'invoices'} />
-          <SidebarItem icon={<FileText />} label="Devis Client" onClick={openQuotes} active={state.activeTabId === 'quotes'} />
-          <SidebarItem icon={<ClipboardList />} label="Ventes (BL)" onClick={openDeliveryNotes} active={state.activeTabId === 'delivery_notes'} />
-          <SidebarItem icon={<Undo2 />} label="Avoirs Clients" onClick={openCreditNotes} active={state.activeTabId === 'credit_notes'} />
-          
-          <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Achats</div>
-          <SidebarItem icon={<Receipt />} label="Factures Achat" onClick={openPurchaseInvoices} active={state.activeTabId === 'purchase_invoices'} />
-          <SidebarItem icon={<ShoppingBag />} label="Commandes" onClick={openPurchaseOrders} active={state.activeTabId === 'purchase_orders'} />
-          <SidebarItem icon={<Undo2 />} label="Avoirs Fourn." onClick={openPurchaseCreditNotes} active={state.activeTabId === 'purchase_credit_notes'} />
-          
-          <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Logistique</div>
-          <SidebarItem icon={<Package />} label="Gestion des Stocks" onClick={openInventory} />
-          <SidebarItem icon={<FolderTree />} label="Familles & Catégories" onClick={openCategories} />
-          
-          <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Comptabilité</div>
-          <SidebarItem icon={<ArrowDownLeft />} label="Règlements Clients" onClick={openClientPayments} active={state.activeTabId === 'payments_clients'} />
-          <SidebarItem icon={<RotateCcw />} label="Remboursements Clients" onClick={openClientRefunds} active={state.activeTabId === 'refunds_clients'} />
-          
-          <SidebarItem icon={<ArrowUpRight />} label="Règlements Fourn." onClick={openSupplierPayments} active={state.activeTabId === 'payments_suppliers'} />
-          {/* REMOVED SidebarItem for Supplier Refunds */}
+      {/* Top Header Bar */}
+      <header className="bg-white border-b border-slate-200 h-14 flex items-center justify-between px-4 flex-shrink-0">
+         <div className="flex items-center gap-3">
+             <div className="md:hidden">
+                 <Menu className="w-6 h-6 text-slate-600" />
+             </div>
+             {/* Logo Mobile */}
+             <div className="md:hidden flex items-center gap-2 font-bold text-slate-800">
+                 <LayoutGrid className="w-5 h-5 text-indigo-600" />
+                 Enigma
+             </div>
+             {/* Title / Breadcrumb Placeholder */}
+         </div>
+         
+         <div className="flex items-center gap-4">
+             {state.currentUser && (
+                 <div className="flex items-center gap-3">
+                     <div className="text-right hidden sm:block">
+                         <div className="text-sm font-bold text-slate-800">{state.currentUser.name}</div>
+                         <div className="text-xs text-slate-500 uppercase">{state.currentUser.role}</div>
+                     </div>
+                     <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-700 font-bold border border-indigo-200">
+                         {state.currentUser.name.charAt(0)}
+                     </div>
+                     <button 
+                        onClick={handleLogout}
+                        className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-full transition-colors"
+                        title="Se déconnecter"
+                     >
+                         <LogOut className="w-5 h-5" />
+                     </button>
+                 </div>
+             )}
+         </div>
+      </header>
 
-          <SidebarItem icon={<Banknote />} label="Gestion des Chèques" onClick={openChecks} active={state.activeTabId === 'checks_mgmt'} />
-          <SidebarItem icon={<TrendingDown />} label="Dépenses & Frais" onClick={openExpenses} active={state.activeTabId === 'expenses_list'} />
-          <SidebarItem icon={<DollarSign />} label="Caisse & Clôture" onClick={openCashRegister} active={state.activeTabId === 'cash_register'} />
-          <SidebarItem icon={<FileBarChart />} label="Relevés Clients" onClick={openClientStatements} active={state.activeTabId === 'statements_clients'} />
-          <SidebarItem icon={<FileBarChart />} label="Relevés Fourn." onClick={openSupplierStatements} active={state.activeTabId === 'statements_suppliers'} />
-
-          <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Relations</div>
-          <SidebarItem icon={<Users />} label="Clients" onClick={openClients} active={state.activeTabId === 'clients_list'} />
-          <SidebarItem icon={<Truck />} label="Fournisseurs" onClick={openSuppliers} active={state.activeTabId === 'suppliers_list'} />
-
-          <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Configuration</div>
-          <SidebarItem icon={<Building2 />} label="Société" onClick={openCompanySettings} active={state.activeTabId === 'settings_company'} />
-          <SidebarItem icon={<Percent />} label="Taxes & TVA" onClick={openTaxSettings} active={state.activeTabId === 'settings_taxes'} />
-          <SidebarItem icon={<Shield />} label="Utilisateurs" onClick={openUsers} active={state.activeTabId === 'users_list'} />
-        </nav>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-        
-        {/* Tab Bar */}
-        <div className="h-10 bg-slate-200 border-b border-slate-300 flex items-end px-2 gap-1 overflow-x-auto no-scrollbar print:hidden">
-          {state.tabs.map(tab => (
-            <div 
-              key={tab.id}
-              onClick={() => dispatch({ type: 'SET_ACTIVE_TAB', payload: tab.id })}
-              className={`
-                group relative px-4 py-2 min-w-[120px] max-w-[200px] text-sm cursor-pointer select-none rounded-t-sm flex items-center justify-between border-t border-x
-                ${state.activeTabId === tab.id 
-                  ? 'bg-white border-slate-300 text-slate-800 font-medium z-10 -mb-[1px] pb-[9px]' 
-                  : 'bg-slate-200 border-transparent text-slate-500 hover:bg-slate-300'}
-              `}
-            >
-              <span className="truncate mr-2">{tab.title}</span>
-              <button 
-                onClick={(e) => { e.stopPropagation(); dispatch({ type: 'CLOSE_TAB', payload: tab.id }); }}
-                className={`p-0.5 rounded-full hover:bg-slate-400/20 ${state.activeTabId === tab.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-              >
-                <X className="w-3 h-3" />
-              </button>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar - Odoo style */}
+        <aside className="w-16 md:w-64 bg-slate-900 text-slate-300 flex flex-col transition-all flex-shrink-0 print:hidden">
+            <div className="h-14 flex items-center justify-center md:justify-start md:px-6 border-b border-slate-700">
+            <LayoutGrid className="text-indigo-400 w-6 h-6 mr-0 md:mr-3" />
+            <span className="font-bold text-white text-lg hidden md:block">Enigma ERP</span>
             </div>
-          ))}
-        </div>
+            
+            <nav className="flex-1 py-4 overflow-y-auto">
+            {canAccess('DASHBOARD') && <SidebarItem icon={<Layout />} label="Tableau de bord" onClick={openDashboard} active={state.activeTabId === 'dashboard'} />}
+            
+            {canAccess('SALES') && (
+                <>
+                <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Commercial</div>
+                <SidebarItem icon={<FileText />} label="Facture Client" onClick={openInvoices} active={state.activeTabId === 'invoices'} />
+                <SidebarItem icon={<FileText />} label="Devis Client" onClick={openQuotes} active={state.activeTabId === 'quotes'} />
+                <SidebarItem icon={<ClipboardList />} label="Ventes (BL)" onClick={openDeliveryNotes} active={state.activeTabId === 'delivery_notes'} />
+                <SidebarItem icon={<Undo2 />} label="Avoirs Clients" onClick={openCreditNotes} active={state.activeTabId === 'credit_notes'} />
+                </>
+            )}
+            
+            {canAccess('PURCHASES') && (
+                <>
+                <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Achats</div>
+                <SidebarItem icon={<Receipt />} label="Factures Achat" onClick={openPurchaseInvoices} active={state.activeTabId === 'purchase_invoices'} />
+                <SidebarItem icon={<ShoppingBag />} label="Commandes" onClick={openPurchaseOrders} active={state.activeTabId === 'purchase_orders'} />
+                <SidebarItem icon={<Undo2 />} label="Avoirs Fourn." onClick={openPurchaseCreditNotes} active={state.activeTabId === 'purchase_credit_notes'} />
+                </>
+            )}
+            
+            {(canAccess('INVENTORY') || canAccess('STOCK')) && (
+                <>
+                <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Logistique</div>
+                <SidebarItem icon={<Package />} label="Gestion des Stocks" onClick={openInventory} />
+                <SidebarItem icon={<ClipboardList />} label="Journal des Stocks" onClick={openStockJournal} />
+                <SidebarItem icon={<ClipboardCheck />} label="Inventaires Physiques" onClick={openInventorySessions} active={state.activeTabId === 'inventory_sessions'} />
+                <SidebarItem icon={<FolderTree />} label="Familles & Catégories" onClick={openCategories} />
+                </>
+            )}
+            
+            {canAccess('FINANCE') && (
+                <>
+                <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Comptabilité</div>
+                <SidebarItem icon={<ArrowDownLeft />} label="Règlements Clients" onClick={openClientPayments} active={state.activeTabId === 'payments_clients'} />
+                <SidebarItem icon={<RotateCcw />} label="Remboursements Clients" onClick={openClientRefunds} active={state.activeTabId === 'refunds_clients'} />
+                
+                <SidebarItem icon={<ArrowUpRight />} label="Règlements Fourn." onClick={openSupplierPayments} active={state.activeTabId === 'payments_suppliers'} />
+                
+                <SidebarItem icon={<Banknote />} label="Gestion des Chèques" onClick={openChecks} active={state.activeTabId === 'checks_mgmt'} />
+                <SidebarItem icon={<TrendingDown />} label="Dépenses & Frais" onClick={openExpenses} active={state.activeTabId === 'expenses_list'} />
+                <SidebarItem icon={<DollarSign />} label="Caisse & Clôture" onClick={openCashRegister} active={state.activeTabId === 'cash_register'} />
+                <SidebarItem icon={<FileBarChart />} label="Relevés Clients" onClick={openClientStatements} active={state.activeTabId === 'statements_clients'} />
+                <SidebarItem icon={<FileBarChart />} label="Relevés Fourn." onClick={openSupplierStatements} active={state.activeTabId === 'statements_suppliers'} />
+                </>
+            )}
 
-        {/* Dynamic View Area */}
-        <div className="flex-1 overflow-hidden relative bg-white">
-          {renderContent()}
-        </div>
-      </main>
+            {(canAccess('PARTNERS') || canAccess('SALES')) && (
+                <>
+                <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Relations</div>
+                <SidebarItem icon={<Users />} label="Clients" onClick={openClients} active={state.activeTabId === 'clients_list'} />
+                <SidebarItem icon={<Truck />} label="Fournisseurs" onClick={openSuppliers} active={state.activeTabId === 'suppliers_list'} />
+                </>
+            )}
+
+            {canAccess('CONFIG') && (
+                <>
+                <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Configuration</div>
+                <SidebarItem icon={<Building2 />} label="Société" onClick={openCompanySettings} active={state.activeTabId === 'settings_company'} />
+                <SidebarItem icon={<Percent />} label="Taxes & TVA" onClick={openTaxSettings} active={state.activeTabId === 'settings_taxes'} />
+                <SidebarItem icon={<Shield />} label="Utilisateurs" onClick={openUsers} active={state.activeTabId === 'users_list'} />
+                </>
+            )}
+            </nav>
+        </aside>
+
+        {/* Main Content */}
+        <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+            
+            {/* Tab Bar */}
+            <div className="h-10 bg-slate-200 border-b border-slate-300 flex items-end px-2 gap-1 overflow-x-auto no-scrollbar print:hidden">
+            {state.tabs.map(tab => (
+                <div 
+                key={tab.id}
+                onClick={() => dispatch({ type: 'SET_ACTIVE_TAB', payload: tab.id })}
+                className={`
+                    group relative px-4 py-2 min-w-[120px] max-w-[200px] text-sm cursor-pointer select-none rounded-t-sm flex items-center justify-between border-t border-x
+                    ${state.activeTabId === tab.id 
+                    ? 'bg-white border-slate-300 text-slate-800 font-medium z-10 -mb-[1px] pb-[9px]' 
+                    : 'bg-slate-200 border-transparent text-slate-500 hover:bg-slate-300'}
+                `}
+                >
+                <span className="truncate mr-2">{tab.title}</span>
+                <button 
+                    onClick={(e) => { e.stopPropagation(); dispatch({ type: 'CLOSE_TAB', payload: tab.id }); }}
+                    className={`p-0.5 rounded-full hover:bg-slate-400/20 ${state.activeTabId === tab.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                >
+                    <X className="w-3 h-3" />
+                </button>
+                </div>
+            ))}
+            </div>
+
+            {/* Dynamic View Area */}
+            <div className="flex-1 overflow-hidden relative bg-white">
+            {renderContent()}
+            </div>
+        </main>
+      </div>
     </div>
   );
 }
