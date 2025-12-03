@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { TaxRate } from '../../types';
 import { Plus, Trash, Percent } from 'lucide-react';
@@ -47,8 +48,8 @@ export const TaxManager: React.FC<TaxManagerProps> = ({ taxRates, onAdd, onDelet
             <tbody>
               {taxRates.map(t => (
                 <tr key={t.id} className="border-b last:border-0 hover:bg-slate-50">
-                  <td className="p-3">{t.name}</td>
-                  <td className="p-3 text-right font-medium">{t.rate} %</td>
+                  <td className="p-3 text-black">{t.name}</td>
+                  <td className="p-3 text-right font-medium text-black">{t.rate} %</td>
                   <td className="p-3 text-center">
                     <button 
                       onClick={() => onDelete(t.id)}

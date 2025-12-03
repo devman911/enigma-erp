@@ -1,12 +1,11 @@
 
-
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Document, Product, Partner, LineItem, Status, DocType, CompanySettings, EntityType, Payment } from '../../types';
-import { Plus, Trash, Save, Printer, ScanBarcode, Search, CheckCircle, AlertOctagon, XCircle, FileInput, ArrowRight, Wallet, AlertTriangle, Undo2, List } from 'lucide-react';
+import { Plus, Trash, Save, Printer, ScanBarcode, Search, CheckCircle, AlertOctagon, XCircle, FileInput, ArrowRight, Wallet, AlertTriangle, Undo2, List, User, Truck } from 'lucide-react';
 import { PrintTemplate } from '../UI/PrintTemplate';
 import { DocumentPaymentModal } from './DocumentPaymentModal';
 import { ProductSelectionModal } from './ProductSelectionModal';
+import { PartnerSelectionModal } from './PartnerSelectionModal';
 
 interface DocumentEditorProps {
   initialData?: Partial<Document>;
@@ -61,6 +60,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false); // Payment Modal state
   const [showProductModal, setShowProductModal] = useState(false); // Product Catalog Modal state
+  const [showPartnerModal, setShowPartnerModal] = useState(false); // Partner Selection Modal state
 
   const symbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : 'TND';
 
@@ -78,22 +78,18 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
       const target = e.target as HTMLElement;
       const isInteractive = ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(target.tagName);
       // Disable global listener if any modal is open
-      if (e.key === 'Enter' && !isInteractive && !showPaymentModal && !showProductModal) { 
+      if (e.key === 'Enter' && !isInteractive && !showPaymentModal && !showProductModal && !showPartnerModal) { 
         e.preventDefault();
         barcodeInputRef.current?.focus();
       }
     };
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [showPaymentModal, showProductModal]);
+  }, [showPaymentModal, showProductModal, showPartnerModal]);
 
   const isPurchase = docType === DocType.PURCHASE || docType === DocType.ORDER || docType === DocType.PURCHASE_CREDIT_NOTE;
   
-  const availablePartners = partners.filter(p => {
-    if (isPurchase) return p.type === EntityType.SUPPLIER;
-    return p.type === EntityType.CLIENT;
-  });
-
+  // Used for display name
   const selectedPartner = partners.find(p => p.id === doc.partnerId);
 
   const getDocTitle = (type: DocType) => {
@@ -295,6 +291,19 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
         />
       )}
 
+      {/* Partner Selection Modal */}
+      {showPartnerModal && (
+        <PartnerSelectionModal 
+            partners={partners}
+            type={isPurchase ? EntityType.SUPPLIER : EntityType.CLIENT}
+            onSelect={(p) => {
+                setDoc({ ...doc, partnerId: p.id });
+                setShowPartnerModal(false);
+            }}
+            onClose={() => setShowPartnerModal(false)}
+        />
+      )}
+
       {/* Print Template */}
       <PrintTemplate document={doc} company={company} partner={selectedPartner} />
 
@@ -395,17 +404,27 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
         {/* Form Fields */}
         <div className="grid grid-cols-3 gap-6 mb-8 bg-slate-50 p-4 rounded border border-slate-200">
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-bold text-slate-500 uppercase">
+            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2">
+              {isPurchase ? <Truck className="w-3 h-3" /> : <User className="w-3 h-3" />}
               {isPurchase ? 'Fournisseur' : 'Client'}
             </label>
-            <select 
-              className="border p-2 rounded bg-white text-black focus:border-indigo-500 transition-colors"
-              value={doc.partnerId}
-              onChange={e => setDoc({...doc, partnerId: e.target.value})}
-            >
-              <option value="">Sélectionner un {isPurchase ? 'fournisseur' : 'client'}...</option>
-              {availablePartners.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <div className="flex gap-2">
+                <input 
+                    type="text"
+                    className="flex-1 border border-slate-300 rounded p-2 bg-white text-black font-medium cursor-pointer focus:ring-2 focus:ring-indigo-500 outline-none"
+                    placeholder={`Cliquez pour sélectionner un ${isPurchase ? 'fournisseur' : 'client'}...`}
+                    value={selectedPartner ? selectedPartner.name : ''}
+                    readOnly
+                    onClick={() => setShowPartnerModal(true)}
+                />
+                <button 
+                    onClick={() => setShowPartnerModal(true)}
+                    className="bg-indigo-600 text-white p-2 rounded hover:bg-indigo-700 transition-colors"
+                    title="Rechercher"
+                >
+                    <Search className="w-4 h-4" />
+                </button>
+            </div>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-bold text-slate-500 uppercase">Date</label>
@@ -416,6 +435,8 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
               onChange={e => setDoc({...doc, date: e.target.value})}
             />
           </div>
+          
+          {docType === DocType.QUOTE && (
           <div className="flex flex-col gap-1">
             <label className="text-xs font-bold text-slate-500 uppercase">Conditions</label>
             <select className="border p-2 rounded bg-white text-black">
@@ -424,6 +445,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
               <option>30 Jours</option>
             </select>
           </div>
+          )}
         </div>
 
         {/* Scanner & Toolbar */}
@@ -447,7 +469,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({ initialData, doc
             {/* Catalog Button */}
             <button 
                 onClick={() => setShowProductModal(true)}
-                className="bg-slate-800 text-white px-4 py-3 rounded hover:bg-slate-700 flex items-center gap-2 shadow-sm whitespace-nowrap"
+                className="bg-indigo-600 text-white px-4 py-3 rounded hover:bg-indigo-700 flex items-center gap-2 shadow-sm whitespace-nowrap"
             >
                 <List className="w-4 h-4" /> Catalogue
             </button>

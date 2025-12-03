@@ -1,7 +1,5 @@
 
-
-
-import { AppState, DocType, EntityType, Status, Role, PaymentMethod } from '../types';
+import { AppState, DocType, EntityType, Status, Role, PaymentMethod, PaymentNature } from '../types';
 
 export const INITIAL_STATE: AppState = {
   activeTabId: 'dashboard',

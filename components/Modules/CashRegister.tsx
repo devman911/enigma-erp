@@ -212,7 +212,7 @@ export const CashRegister: React.FC<CashRegisterProps> = ({
                                      </div>
                                  )}
                              </div>
-                             <button type="submit" className="bg-slate-800 text-white py-3 rounded hover:bg-slate-900 font-bold">
+                             <button type="submit" className="bg-indigo-600 text-white py-3 rounded hover:bg-indigo-700 font-bold">
                                  Valider la Clôture
                              </button>
                         </form>

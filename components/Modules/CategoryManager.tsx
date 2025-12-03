@@ -1,14 +1,19 @@
+
+
 import React, { useState } from 'react';
 import { ProductFamily, ProductCategory, ProductSubCategory } from '../../types';
-import { Plus, Folder, ChevronRight, Layers, Tag } from 'lucide-react';
+import { Plus, Folder, ChevronRight, Layers, Tag, Edit2 } from 'lucide-react';
 
 interface CategoryManagerProps {
   families: ProductFamily[];
   categories: ProductCategory[];
   subCategories: ProductSubCategory[];
   onAddFamily: (name: string) => void;
+  onUpdateFamily: (id: string, name: string) => void;
   onAddCategory: (familyId: string, name: string) => void;
+  onUpdateCategory: (id: string, name: string) => void;
   onAddSubCategory: (categoryId: string, name: string) => void;
+  onUpdateSubCategory: (id: string, name: string) => void;
 }
 
 export const CategoryManager: React.FC<CategoryManagerProps> = ({
@@ -16,8 +21,11 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
   categories,
   subCategories,
   onAddFamily,
+  onUpdateFamily,
   onAddCategory,
-  onAddSubCategory
+  onUpdateCategory,
+  onAddSubCategory,
+  onUpdateSubCategory
 }) => {
   const [selectedFamilyId, setSelectedFamilyId] = useState<string | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
@@ -38,6 +46,14 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
     }
   };
 
+  const handleEditFamily = (e: React.MouseEvent, id: string, currentName: string) => {
+      e.stopPropagation();
+      const newName = prompt("Modifier le nom de la famille", currentName);
+      if (newName && newName.trim() !== "") {
+          onUpdateFamily(id, newName);
+      }
+  };
+
   const handleCreateCategory = () => {
     if (selectedFamilyId && newCategoryName.trim()) {
       onAddCategory(selectedFamilyId, newCategoryName);
@@ -45,10 +61,26 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
     }
   };
 
+  const handleEditCategory = (e: React.MouseEvent, id: string, currentName: string) => {
+    e.stopPropagation();
+    const newName = prompt("Modifier le nom de la catégorie", currentName);
+    if (newName && newName.trim() !== "") {
+        onUpdateCategory(id, newName);
+    }
+  };
+
   const handleCreateSubCategory = () => {
     if (selectedCategoryId && newSubName.trim()) {
       onAddSubCategory(selectedCategoryId, newSubName);
       setNewSubName('');
+    }
+  };
+
+  const handleEditSubCategory = (e: React.MouseEvent, id: string, currentName: string) => {
+    e.stopPropagation();
+    const newName = prompt("Modifier le nom de la sous-catégorie", currentName);
+    if (newName && newName.trim() !== "") {
+        onUpdateSubCategory(id, newName);
     }
   };
 
@@ -75,7 +107,7 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
               <div 
                 key={fam.id}
                 onClick={() => { setSelectedFamilyId(fam.id); setSelectedCategoryId(null); }}
-                className={`p-2 rounded cursor-pointer flex justify-between items-center text-sm ${
+                className={`p-2 rounded cursor-pointer flex justify-between items-center text-sm group ${
                   selectedFamilyId === fam.id ? 'bg-indigo-50 text-indigo-700 font-medium border border-indigo-100' : 'hover:bg-slate-50 text-slate-600'
                 }`}
               >
@@ -83,7 +115,16 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
                    <Folder className="w-4 h-4" />
                    {fam.name}
                 </div>
-                {selectedFamilyId === fam.id && <ChevronRight className="w-4 h-4" />}
+                <div className="flex items-center gap-1">
+                    <button 
+                        onClick={(e) => handleEditFamily(e, fam.id, fam.name)}
+                        className="p-1 text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Modifier"
+                    >
+                        <Edit2 className="w-3 h-3" />
+                    </button>
+                    {selectedFamilyId === fam.id && <ChevronRight className="w-4 h-4" />}
+                </div>
               </div>
             ))}
           </div>
@@ -121,7 +162,7 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
               <div 
                 key={cat.id}
                 onClick={() => setSelectedCategoryId(cat.id)}
-                className={`p-2 rounded cursor-pointer flex justify-between items-center text-sm ${
+                className={`p-2 rounded cursor-pointer flex justify-between items-center text-sm group ${
                   selectedCategoryId === cat.id ? 'bg-indigo-50 text-indigo-700 font-medium border border-indigo-100' : 'hover:bg-slate-50 text-slate-600'
                 }`}
               >
@@ -129,7 +170,16 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
                    <Tag className="w-4 h-4" />
                    {cat.name}
                 </div>
-                {selectedCategoryId === cat.id && <ChevronRight className="w-4 h-4" />}
+                <div className="flex items-center gap-1">
+                    <button 
+                        onClick={(e) => handleEditCategory(e, cat.id, cat.name)}
+                        className="p-1 text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Modifier"
+                    >
+                        <Edit2 className="w-3 h-3" />
+                    </button>
+                    {selectedCategoryId === cat.id && <ChevronRight className="w-4 h-4" />}
+                </div>
               </div>
             ))}
           </div>
@@ -166,10 +216,19 @@ export const CategoryManager: React.FC<CategoryManagerProps> = ({
             {filteredSubCategories.map(sub => (
               <div 
                 key={sub.id}
-                className="p-2 rounded text-sm hover:bg-slate-50 text-slate-600 flex items-center gap-2 border border-transparent hover:border-slate-100"
+                className="p-2 rounded text-sm hover:bg-slate-50 text-slate-600 flex justify-between items-center border border-transparent hover:border-slate-100 group"
               >
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
-                {sub.name}
+                <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
+                    {sub.name}
+                </div>
+                <button 
+                    onClick={(e) => handleEditSubCategory(e, sub.id, sub.name)}
+                    className="p-1 text-slate-400 hover:text-indigo-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Modifier"
+                >
+                    <Edit2 className="w-3 h-3" />
+                </button>
               </div>
             ))}
           </div>

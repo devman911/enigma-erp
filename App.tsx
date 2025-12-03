@@ -1,9 +1,6 @@
 
-
-
-
 import React, { useReducer, useState } from 'react';
-import { AppState, TabData, EntityType, Product, Document, DocType, Status, ProductFamily, ProductCategory, ProductSubCategory, TaxRate, CompanySettings as CompanySettingsType, Partner, User, Payment, PaymentStatus, CashSession, PaymentMethod, Expense } from './types';
+import { AppState, TabData, EntityType, Product, Document, DocType, Status, ProductFamily, ProductCategory, ProductSubCategory, TaxRate, CompanySettings as CompanySettingsType, Partner, User, Payment, PaymentStatus, CashSession, PaymentMethod, Expense, PaymentNature } from './types';
 import { INITIAL_STATE } from './services/mockData';
 import { Dashboard } from './components/Modules/Dashboard';
 import { Inventory } from './components/Modules/Inventory';
@@ -22,7 +19,7 @@ import { CheckList } from './components/Modules/CheckList';
 import { CashRegister } from './components/Modules/CashRegister';
 import { ExpenseList } from './components/Modules/ExpenseList';
 import { DataTable } from './components/UI/DataTable';
-import { Layout, LayoutGrid, ShoppingCart, Truck, Users, Settings, X, FileText, Package, FolderTree, Building2, Percent, ClipboardList, ShoppingBag, Receipt, User as UserIcon, Shield, Wallet, ArrowUpRight, ArrowDownLeft, Banknote, DollarSign, Undo2, FileBarChart, TrendingDown } from 'lucide-react';
+import { Layout, LayoutGrid, ShoppingCart, Truck, Users, Settings, X, FileText, Package, FolderTree, Building2, Percent, ClipboardList, ShoppingBag, Receipt, User as UserIcon, Shield, Wallet, ArrowUpRight, ArrowDownLeft, Banknote, DollarSign, Undo2, FileBarChart, TrendingDown, RotateCcw } from 'lucide-react';
 
 // --- Reducer for "Backend" logic ---
 type Action = 
@@ -34,8 +31,11 @@ type Action =
   | { type: 'SAVE_PARTNER', payload: Partner }
   | { type: 'DELETE_PARTNER', payload: string }
   | { type: 'ADD_FAMILY', payload: string }
+  | { type: 'UPDATE_FAMILY', payload: { id: string, name: string } }
   | { type: 'ADD_CATEGORY', payload: { familyId: string, name: string } }
+  | { type: 'UPDATE_CATEGORY', payload: { id: string, name: string } }
   | { type: 'ADD_SUBCATEGORY', payload: { categoryId: string, name: string } }
+  | { type: 'UPDATE_SUBCATEGORY', payload: { id: string, name: string } }
   | { type: 'ADD_TAX_RATE', payload: { name: string, rate: number } }
   | { type: 'DELETE_TAX_RATE', payload: string }
   | { type: 'UPDATE_COMPANY', payload: CompanySettingsType }
@@ -103,13 +103,22 @@ function appReducer(state: AppState, action: Action): AppState {
         const newFam: ProductFamily = { id: `fam_${Date.now()}`, name: action.payload };
         return { ...state, families: [...state.families, newFam] };
 
+    case 'UPDATE_FAMILY':
+        return { ...state, families: state.families.map(f => f.id === action.payload.id ? { ...f, name: action.payload.name } : f) };
+
     case 'ADD_CATEGORY':
         const newCat: ProductCategory = { id: `cat_${Date.now()}`, familyId: action.payload.familyId, name: action.payload.name };
         return { ...state, categories: [...state.categories, newCat] };
 
+    case 'UPDATE_CATEGORY':
+        return { ...state, categories: state.categories.map(c => c.id === action.payload.id ? { ...c, name: action.payload.name } : c) };
+
     case 'ADD_SUBCATEGORY':
         const newSub: ProductSubCategory = { id: `sub_${Date.now()}`, categoryId: action.payload.categoryId, name: action.payload.name };
         return { ...state, subCategories: [...state.subCategories, newSub] };
+
+    case 'UPDATE_SUBCATEGORY':
+        return { ...state, subCategories: state.subCategories.map(s => s.id === action.payload.id ? { ...s, name: action.payload.name } : s) };
 
     case 'ADD_TAX_RATE':
         const newTax: TaxRate = { id: `tax_${Date.now()}`, name: action.payload.name, rate: action.payload.rate };
@@ -144,7 +153,22 @@ function appReducer(state: AppState, action: Action): AppState {
           if (activeSession && action.payload.method === PaymentMethod.CASH) {
             const isClient = state.partners.find(p => p.id === action.payload.partnerId)?.type === EntityType.CLIENT;
             const updatedSession = { ...activeSession };
-            if (isClient) updatedSession.totalIn += action.payload.amount;
+            const nature = action.payload.nature || PaymentNature.PAYMENT;
+
+            // Logic matrix:
+            // Client + Payment = IN
+            // Client + Refund = OUT
+            // Supplier + Payment = OUT
+            // Supplier + Refund = IN
+
+            let isMoneyIn = false;
+            if (isClient) {
+                isMoneyIn = nature === PaymentNature.PAYMENT;
+            } else {
+                isMoneyIn = nature === PaymentNature.REFUND;
+            }
+            
+            if (isMoneyIn) updatedSession.totalIn += action.payload.amount;
             else updatedSession.totalOut += action.payload.amount;
             
             newSessions = state.cashSessions.map(s => s.id === activeSession.id ? updatedSession : s);
@@ -244,8 +268,11 @@ export default function App() {
   const openUsers = () => dispatch({ type: 'ADD_TAB', payload: { id: 'users_list', title: 'Utilisateurs', type: 'LIST', module: 'USERS' }});
 
   // Finance Actions
-  const openClientPayments = () => dispatch({ type: 'ADD_TAB', payload: { id: 'payments_clients', title: 'Règlements Clients', type: 'LIST', module: 'FINANCE' }});
-  const openSupplierPayments = () => dispatch({ type: 'ADD_TAB', payload: { id: 'payments_suppliers', title: 'Règlements Fourn.', type: 'LIST', module: 'FINANCE' }});
+  const openClientPayments = () => dispatch({ type: 'ADD_TAB', payload: { id: 'payments_clients', title: 'Encaissements Clients', type: 'LIST', module: 'FINANCE' }});
+  const openSupplierPayments = () => dispatch({ type: 'ADD_TAB', payload: { id: 'payments_suppliers', title: 'Décaissements Fourn.', type: 'LIST', module: 'FINANCE' }});
+  const openClientRefunds = () => dispatch({ type: 'ADD_TAB', payload: { id: 'refunds_clients', title: 'Remboursements Clients', type: 'LIST', module: 'FINANCE' }});
+  // const openSupplierRefunds = () => dispatch({ type: 'ADD_TAB', payload: { id: 'refunds_suppliers', title: 'Remboursements Fourn.', type: 'LIST', module: 'FINANCE' }}); // REMOVED
+
   const openChecks = () => dispatch({ type: 'ADD_TAB', payload: { id: 'checks_mgmt', title: 'Gestion des Chèques', type: 'LIST', module: 'CHECKS' }});
   const openCashRegister = () => dispatch({ type: 'ADD_TAB', payload: { id: 'cash_register', title: 'Caisse & Clôture', type: 'LIST', module: 'CASH' }});
   const openExpenses = () => dispatch({ type: 'ADD_TAB', payload: { id: 'expenses_list', title: 'Dépenses', type: 'LIST', module: 'EXPENSES' }});
@@ -485,8 +512,11 @@ export default function App() {
         categories={state.categories}
         subCategories={state.subCategories}
         onAddFamily={(name) => dispatch({ type: 'ADD_FAMILY', payload: name })}
+        onUpdateFamily={(id, name) => dispatch({ type: 'UPDATE_FAMILY', payload: { id, name } })}
         onAddCategory={(familyId, name) => dispatch({ type: 'ADD_CATEGORY', payload: { familyId, name } })}
+        onUpdateCategory={(id, name) => dispatch({ type: 'UPDATE_CATEGORY', payload: { id, name } })}
         onAddSubCategory={(categoryId, name) => dispatch({ type: 'ADD_SUBCATEGORY', payload: { categoryId, name } })}
+        onUpdateSubCategory={(id, name) => dispatch({ type: 'UPDATE_SUBCATEGORY', payload: { id, name } })}
       />;
     }
 
@@ -610,13 +640,20 @@ export default function App() {
 
     // Module Finance - Payment List
     if (activeTab.type === 'LIST' && activeTab.module === 'FINANCE') {
-        const type = activeTab.id === 'payments_clients' ? EntityType.CLIENT : 
-                     activeTab.id === 'payments_suppliers' ? EntityType.SUPPLIER : undefined;
+        let type: EntityType | undefined;
+        let nature: PaymentNature | undefined;
+
+        if (activeTab.id === 'payments_clients') { type = EntityType.CLIENT; nature = PaymentNature.PAYMENT; }
+        if (activeTab.id === 'payments_suppliers') { type = EntityType.SUPPLIER; nature = PaymentNature.PAYMENT; }
+        if (activeTab.id === 'refunds_clients') { type = EntityType.CLIENT; nature = PaymentNature.REFUND; }
+        // REMOVED supplier refunds logic
+
         return <PaymentList 
             payments={state.payments} 
             partners={state.partners}
             currency={currentCurrency} 
             type={type}
+            nature={nature}
             onAdd={handleAddPayment}
             onDelete={handleDeletePayment}
         />;
@@ -835,7 +872,11 @@ export default function App() {
           
           <div className="px-6 py-2 text-xs font-bold text-slate-500 uppercase mt-2 hidden md:block">Comptabilité</div>
           <SidebarItem icon={<ArrowDownLeft />} label="Règlements Clients" onClick={openClientPayments} active={state.activeTabId === 'payments_clients'} />
+          <SidebarItem icon={<RotateCcw />} label="Remboursements Clients" onClick={openClientRefunds} active={state.activeTabId === 'refunds_clients'} />
+          
           <SidebarItem icon={<ArrowUpRight />} label="Règlements Fourn." onClick={openSupplierPayments} active={state.activeTabId === 'payments_suppliers'} />
+          {/* REMOVED SidebarItem for Supplier Refunds */}
+
           <SidebarItem icon={<Banknote />} label="Gestion des Chèques" onClick={openChecks} active={state.activeTabId === 'checks_mgmt'} />
           <SidebarItem icon={<TrendingDown />} label="Dépenses & Frais" onClick={openExpenses} active={state.activeTabId === 'expenses_list'} />
           <SidebarItem icon={<DollarSign />} label="Caisse & Clôture" onClick={openCashRegister} active={state.activeTabId === 'cash_register'} />

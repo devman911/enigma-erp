@@ -1,7 +1,6 @@
 
-
 import React, { useState, useEffect } from 'react';
-import { PaymentMethod, Payment, Document, PaymentStatus } from '../../types';
+import { PaymentMethod, Payment, Document, PaymentStatus, PaymentNature, DocType } from '../../types';
 import { X, Save, CheckCircle, CreditCard, CalendarClock } from 'lucide-react';
 
 interface DocumentPaymentModalProps {
@@ -40,6 +39,12 @@ export const DocumentPaymentModal: React.FC<DocumentPaymentModalProps> = ({ docu
         return;
     }
 
+    // Determine nature based on document type (Credit Notes imply Refund usually)
+    let nature = PaymentNature.PAYMENT;
+    if (document.type === DocType.CREDIT_NOTE || document.type === DocType.PURCHASE_CREDIT_NOTE) {
+        nature = PaymentNature.REFUND;
+    }
+
     const newPayment: Payment = {
         id: Math.random().toString(36).substr(2, 9),
         partnerId: document.partnerId,
@@ -47,6 +52,7 @@ export const DocumentPaymentModal: React.FC<DocumentPaymentModalProps> = ({ docu
         date,
         amount,
         method,
+        nature,
         reference,
         note: note || `Règlement pour ${document.reference}`,
         dueDate: method === PaymentMethod.CHECK ? dueDate : undefined,

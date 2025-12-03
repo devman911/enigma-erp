@@ -1,5 +1,4 @@
 
-
 export enum EntityType {
   CLIENT = 'CLIENT',
   SUPPLIER = 'SUPPLIER'
@@ -43,6 +42,11 @@ export enum PaymentStatus {
   REJECTED = 'Rejeté'
 }
 
+export enum PaymentNature {
+  PAYMENT = 'PAYMENT', // Encaissement (Client) ou Décaissement (Frs)
+  REFUND = 'REFUND'    // Remboursement (Sortie pour Client, Entrée pour Frs)
+}
+
 export interface User {
   id: string;
   name: string;
@@ -70,6 +74,7 @@ export interface Payment {
   date: string;
   amount: number;
   method: PaymentMethod;
+  nature: PaymentNature; // Nature de l'opération
   reference: string; // Numéro de chèque ou virement
   partnerId: string;
   documentId?: string; // Lien optionnel vers un document spécifique

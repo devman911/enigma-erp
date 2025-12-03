@@ -1,8 +1,8 @@
 
-
 import React, { useState, useEffect } from 'react';
-import { PaymentMethod, Payment, Partner, PaymentStatus } from '../../types';
-import { X, Save, DollarSign, CalendarClock } from 'lucide-react';
+import { PaymentMethod, Payment, Partner, PaymentStatus, EntityType, PaymentNature } from '../../types';
+import { X, Save, DollarSign, CalendarClock, ArrowRightLeft, Search } from 'lucide-react';
+import { PartnerSelectionModal } from './PartnerSelectionModal';
 
 interface PaymentModalProps {
   partnerName?: string;
@@ -18,13 +18,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ partnerName, partner
   const [amount, setAmount] = useState<number>(0);
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [method, setMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
+  const [nature, setNature] = useState<PaymentNature>(PaymentNature.PAYMENT);
   const [dueDate, setDueDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [reference, setReference] = useState('');
   const [note, setNote] = useState('');
+  
+  const [showPartnerModal, setShowPartnerModal] = useState(false);
 
   useEffect(() => {
     if (partnerId) setSelectedPartnerId(partnerId);
   }, [partnerId]);
+
+  // Determine selected partner type
+  const selectedPartner = partners?.find(p => p.id === selectedPartnerId);
+  const isClient = selectedPartner ? selectedPartner.type === EntityType.CLIENT : (partners ? true : undefined); // Default to client logic if unknown
+
+  // Labels based on context
+  const getNatureLabel = (nat: PaymentNature) => {
+      if (nat === PaymentNature.PAYMENT) return isClient ? 'Encaissement (Client paie)' : 'Décaissement (Paiement Frs)';
+      if (nat === PaymentNature.REFUND) return isClient ? 'Remboursement (Retour au Client)' : 'Remboursement (Reçu du Frs)';
+      return '';
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,6 +63,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ partnerName, partner
         date,
         amount,
         method,
+        nature,
         reference,
         note,
         dueDate: method === PaymentMethod.CHECK ? dueDate : undefined,
@@ -60,6 +75,18 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ partnerName, partner
   };
 
   return (
+    <>
+    {showPartnerModal && partners && (
+        <PartnerSelectionModal 
+            partners={partners}
+            onSelect={(p) => {
+                setSelectedPartnerId(p.id);
+                setShowPartnerModal(false);
+            }}
+            onClose={() => setShowPartnerModal(false)}
+        />
+    )}
+
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
         <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center">
@@ -82,20 +109,52 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ partnerName, partner
             ) : (
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Tiers (Client / Fournisseur)</label>
-                    <select 
-                        className="w-full border border-slate-300 rounded p-2 bg-white text-black"
-                        value={selectedPartnerId}
-                        onChange={(e) => setSelectedPartnerId(e.target.value)}
-                        required
-                        autoFocus
-                    >
-                        <option value="">-- Sélectionner un tiers --</option>
-                        {partners?.map(p => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                    </select>
+                    <div className="flex gap-2">
+                        <input 
+                            type="text"
+                            className="flex-1 border border-slate-300 rounded p-2 bg-white text-black font-medium"
+                            placeholder="Sélectionner un tiers..."
+                            value={selectedPartner ? selectedPartner.name : ''}
+                            readOnly
+                            onClick={() => setShowPartnerModal(true)}
+                        />
+                        <button 
+                            type="button"
+                            onClick={() => setShowPartnerModal(true)}
+                            className="bg-indigo-600 text-white p-2 rounded hover:bg-indigo-700 transition-colors"
+                        >
+                            <Search className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
             )}
+
+            {/* NATURE SELECTION (ENCAISSEMENT vs REMBOURSEMENT) */}
+            <div className="bg-slate-100 p-3 rounded border border-slate-200">
+                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-1">
+                     <ArrowRightLeft className="w-3 h-3" /> Type d'opération
+                 </label>
+                 <div className="grid grid-cols-2 gap-2">
+                     <button
+                        type="button"
+                        onClick={() => setNature(PaymentNature.PAYMENT)}
+                        className={`text-xs py-2 px-1 rounded border font-medium ${nature === PaymentNature.PAYMENT 
+                            ? (isClient ? 'bg-emerald-100 border-emerald-300 text-emerald-800' : 'bg-amber-100 border-amber-300 text-amber-800')
+                            : 'bg-white border-slate-300 text-slate-600'}`}
+                     >
+                         {getNatureLabel(PaymentNature.PAYMENT)}
+                     </button>
+                     <button
+                        type="button"
+                        onClick={() => setNature(PaymentNature.REFUND)}
+                        className={`text-xs py-2 px-1 rounded border font-medium ${nature === PaymentNature.REFUND 
+                            ? 'bg-purple-100 border-purple-300 text-purple-800' 
+                            : 'bg-white border-slate-300 text-slate-600'}`}
+                     >
+                         {getNatureLabel(PaymentNature.REFUND)}
+                     </button>
+                 </div>
+            </div>
 
             <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Date du règlement</label>
@@ -180,5 +239,6 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ partnerName, partner
         </form>
       </div>
     </div>
+    </>
   );
 };

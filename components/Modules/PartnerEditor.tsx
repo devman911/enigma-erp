@@ -1,7 +1,6 @@
 
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Partner, EntityType, Document, DocType, Status, Payment } from '../../types';
+import { Partner, EntityType, Document, DocType, Status, Payment, PaymentNature } from '../../types';
 import { Save, X, User, MapPin, Phone, Mail, FileText, Wallet, TrendingUp, AlertCircle, PlusCircle, History, Trash, Printer, Calendar, Filter } from 'lucide-react';
 import { DataTable } from '../UI/DataTable';
 import { PaymentModal } from './PaymentModal';
@@ -105,12 +104,25 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defau
         .filter(d => (d.type === DocType.CREDIT_NOTE || d.type === DocType.PURCHASE_CREDIT_NOTE) && d.status !== Status.CANCELLED && d.status !== Status.DRAFT)
         .reduce((sum, d) => sum + d.totalTTC, 0);
     
-    const totalPaid = partnerPayments.reduce((sum, p) => sum + p.amount, 0);
-    
-    // Solde = (Initial + Facturé) - (Réglé + Avoirs)
-    const totalBalance = (formData.initialBalance || 0) + totalInvoiced - (totalPaid + totalCreditNotes);
+    // Calcul Paiements
+    // Standard Payment = Credit (Reduces Debt)
+    // Refund = Debit (Increases Debt / Restores Balance)
+    const totalStandardPaid = partnerPayments
+        .filter(p => !p.nature || p.nature === PaymentNature.PAYMENT)
+        .reduce((sum, p) => sum + p.amount, 0);
 
-    return { totalInvoiced, totalBalance, totalPaid, totalCreditNotes };
+    const totalRefunds = partnerPayments
+        .filter(p => p.nature === PaymentNature.REFUND)
+        .reduce((sum, p) => sum + p.amount, 0);
+    
+    // Net Paid = Paid - Refunds
+    const netPaid = totalStandardPaid - totalRefunds;
+
+    // Solde = (Initial + Facturé) - (Réglé + Avoirs) 
+    // OR: Solde = Initial + Facturé - Avoirs - Payments + Refunds
+    const totalBalance = (formData.initialBalance || 0) + totalInvoiced - totalCreditNotes - netPaid;
+
+    return { totalInvoiced, totalBalance, totalPaid: netPaid, totalCreditNotes };
   }, [partnerDocs, partnerPayments, formData.initialBalance]);
 
   // --- Statement (Fiche Tiers) Logic ---
@@ -121,26 +133,30 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defau
     const end = new Date(endDate);
     end.setHours(23, 59, 59); // Include full end day
 
+    // Helper for balance calc
+    const calcTransactionsBefore = (dStr: string) => {
+        const d = new Date(dStr);
+        return d < start;
+    }
+
     // 1. Calculate Previous Balance (Report à nouveau)
-    // Filter docs BEFORE start date
-    // Invoices = Debit
-    const prevInvoiced = partnerDocs.filter(d => 
-        (d.type === DocType.INVOICE || d.type === DocType.PURCHASE) && 
-        d.status !== Status.CANCELLED && d.status !== Status.DRAFT &&
-        new Date(d.date) < start
-    ).reduce((sum, d) => sum + d.totalTTC, 0);
+    const prevInvoiced = partnerDocs
+        .filter(d => (d.type === DocType.INVOICE || d.type === DocType.PURCHASE) && d.status !== Status.CANCELLED && d.status !== Status.DRAFT && calcTransactionsBefore(d.date))
+        .reduce((sum, d) => sum + d.totalTTC, 0);
 
-    // Credit Notes = Credit
-    const prevCredits = partnerDocs.filter(d => 
-        (d.type === DocType.CREDIT_NOTE || d.type === DocType.PURCHASE_CREDIT_NOTE) && 
-        d.status !== Status.CANCELLED && d.status !== Status.DRAFT &&
-        new Date(d.date) < start
-    ).reduce((sum, d) => sum + d.totalTTC, 0);
+    const prevCredits = partnerDocs
+        .filter(d => (d.type === DocType.CREDIT_NOTE || d.type === DocType.PURCHASE_CREDIT_NOTE) && d.status !== Status.CANCELLED && d.status !== Status.DRAFT && calcTransactionsBefore(d.date))
+        .reduce((sum, d) => sum + d.totalTTC, 0);
 
-    // Payments = Credit
-    const prevPaid = partnerPayments.filter(p => new Date(p.date) < start).reduce((sum, p) => sum + p.amount, 0);
+    const prevPayments = partnerPayments
+        .filter(p => (!p.nature || p.nature === PaymentNature.PAYMENT) && calcTransactionsBefore(p.date))
+        .reduce((sum, p) => sum + p.amount, 0);
+
+    const prevRefunds = partnerPayments
+        .filter(p => p.nature === PaymentNature.REFUND && calcTransactionsBefore(p.date))
+        .reduce((sum, p) => sum + p.amount, 0);
     
-    const previousBalance = (formData.initialBalance || 0) + prevInvoiced - (prevPaid + prevCredits);
+    const previousBalance = (formData.initialBalance || 0) + prevInvoiced - prevCredits - prevPayments + prevRefunds;
 
     // 2. Get Period Transactions
     const periodInvoices = partnerDocs.filter(d => 
@@ -169,7 +185,9 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defau
         credit: d.totalTTC // Credit Note Amount
     }));
 
+    // Standard Payments = Credit
     const periodPayments = partnerPayments.filter(p => 
+        (!p.nature || p.nature === PaymentNature.PAYMENT) && 
         new Date(p.date) >= start && new Date(p.date) <= end
     ).map(p => ({
         id: p.id,
@@ -177,11 +195,25 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defau
         ref: p.reference || '-',
         label: `Règlement (${p.method})`,
         debit: 0,
-        credit: p.amount // Paid Amount
+        credit: p.amount 
+    }));
+
+    // Refunds = Debit (Reverse Payment)
+    const periodRefunds = partnerPayments.filter(p => 
+        p.nature === PaymentNature.REFUND && 
+        new Date(p.date) >= start && new Date(p.date) <= end
+    ).map(p => ({
+        id: p.id,
+        date: p.date,
+        ref: p.reference || '-',
+        label: `Remboursement (${p.method})`,
+        debit: p.amount,
+        credit: 0 
     }));
 
     // Merge and Sort by Date
-    const transactions = [...periodInvoices, ...periodCreditNotes, ...periodPayments].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const transactions = [...periodInvoices, ...periodCreditNotes, ...periodPayments, ...periodRefunds]
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // Calculate Running Balance
     let runningBalance = previousBalance;
@@ -230,7 +262,7 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defau
                     <th className="py-2 text-left">Date</th>
                     <th className="py-2 text-left">Libellé</th>
                     <th className="py-2 text-left">Référence</th>
-                    <th className="py-2 text-right">Débit (Facturé)</th>
+                    <th className="py-2 text-right">Débit (Facturé/Remb)</th>
                     <th className="py-2 text-right">Crédit (Réglé/Avoir)</th>
                     <th className="py-2 text-right">Solde</th>
                 </tr>
@@ -340,7 +372,7 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defau
                     <Wallet className="w-5 h-5" />
                 </div>
                 <div>
-                    <p className="text-xs text-slate-500 uppercase font-bold">Total Réglé</p>
+                    <p className="text-xs text-slate-500 uppercase font-bold">Total Réglé (Net)</p>
                     <p className="text-lg font-bold text-slate-800">{stats.totalPaid.toFixed(2)} {symbol}</p>
                 </div>
             </div>
@@ -553,7 +585,9 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defau
                          {partnerPayments.slice().reverse().slice(0, 5).map(p => (
                              <div key={p.id} className="flex justify-between items-center text-slate-700 p-1 hover:bg-slate-50 rounded group">
                                  <span>{p.date} ({p.method})</span>
-                                 <span className="font-bold text-emerald-600">-{p.amount.toFixed(2)} {symbol}</span>
+                                 <span className={`font-bold ${p.nature === PaymentNature.REFUND ? 'text-red-600' : 'text-emerald-600'}`}>
+                                     {p.nature === PaymentNature.REFUND ? '+' : '-'} {p.amount.toFixed(2)} {symbol}
+                                 </span>
                              </div>
                          ))}
                      </div>
@@ -603,7 +637,8 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defau
                  data={partnerPayments.slice().sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())}
                  columns={[
                      { key: 'date', header: 'Date' },
-                     { key: 'amount', header: 'Montant', render: (p) => <span className="font-bold text-emerald-600">{p.amount.toFixed(2)} {symbol}</span> },
+                     { key: 'nature', header: 'Nature', render: (p) => <span className={`text-[10px] uppercase px-1 rounded border ${p.nature === PaymentNature.REFUND ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-50 text-slate-500'}`}>{p.nature === PaymentNature.REFUND ? 'Remboursement' : 'Paiement'}</span> },
+                     { key: 'amount', header: 'Montant', render: (p) => <span className={`font-bold ${p.nature === PaymentNature.REFUND ? 'text-red-600' : 'text-emerald-600'}`}>{p.amount.toFixed(2)} {symbol}</span> },
                      { key: 'method', header: 'Mode' },
                      { key: 'reference', header: 'Référence' },
                      { key: 'id', header: 'Action', render: (p) => (
@@ -662,8 +697,8 @@ export const PartnerEditor: React.FC<PartnerEditorProps> = ({ initialData, defau
                              <th className="p-3 font-bold text-slate-600 border-b">Date</th>
                              <th className="p-3 font-bold text-slate-600 border-b">Libellé</th>
                              <th className="p-3 font-bold text-slate-600 border-b">Réf</th>
-                             <th className="p-3 font-bold text-slate-600 border-b text-right text-emerald-700">Débit (Facturé)</th>
-                             <th className="p-3 font-bold text-slate-600 border-b text-right text-amber-700">Crédit (Réglé/Avoir)</th>
+                             <th className="p-3 font-bold text-slate-600 border-b text-right text-emerald-700">Débit (Fact/Remb)</th>
+                             <th className="p-3 font-bold text-slate-600 border-b text-right text-amber-700">Crédit (Règl/Av)</th>
                              <th className="p-3 font-bold text-slate-600 border-b text-right">Solde</th>
                          </tr>
                      </thead>
